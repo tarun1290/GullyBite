@@ -30,6 +30,7 @@ const NAV_ITEMS: NavItem[] = [
   { label: 'Ratings',             icon: '⭐', path: '/dashboard/ratings' },
   { label: 'Feedback',            icon: '💬', path: '/dashboard/feedback' },
   { label: 'Loyalty',             icon: '🎖', path: '/dashboard/loyalty' },
+  { label: 'Dine-in',             icon: '🍽', path: '/dashboard/dine-in' },
   { label: 'Customers',           icon: '👥', path: '/dashboard/customers' },
   { label: 'Payments',            icon: '💰', path: '/dashboard/payments' },
   { label: 'Penalties',           icon: '⚠️', path: '/dashboard/penalties' },

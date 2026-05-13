@@ -161,7 +161,16 @@ async function sendCampaign(campaignId) {
       await finalize(campaignId, 'failed', { error_message: 'WhatsApp access token missing' });
       return { ok: false, reason: 'no_access_token' };
     }
-    const phoneNumberId = restaurant.marketing_wa_phone_number_id || waAccount.phone_number_id;
+    // Outbound number resolution:
+    //   1. Explicit override on the campaign doc (set by journeyExecutor
+    //      when the call site pre-resolved via getOutboundNumberId —
+    //      e.g. handleDineInCheckin). Lets event-driven promotional
+    //      callers make the routing decision audibly at the call site.
+    //   2. Marketing number from the restaurant doc (manual-blast path).
+    //   3. Primary WABA number — the catch-all fallback.
+    const phoneNumberId = campaign.outbound_phone_number_id
+      || restaurant.marketing_wa_phone_number_id
+      || waAccount.phone_number_id;
 
     const template = await col('campaign_templates').findOne({ template_id: campaign.template_id });
     if (!template) {

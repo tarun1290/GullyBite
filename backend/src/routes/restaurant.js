@@ -677,9 +677,30 @@ router.get('/', async (req, res) => {
         name: w.display_name,
         phone: w.phone_display,
       }));
+      // Marketing-number display phone resolution:
+      //   1. Persisted r.marketing_wa_display_phone — captured by
+      //      verifyMarketingWaNumber directly from Meta's
+      //      /phone_number response; authoritative when present.
+      //   2. waba_accounts join fallback — covers restaurants whose
+      //      marketing number was saved before the verification field
+      //      was added (the next verifier tick backfills #1).
+      //   3. null — no marketing number, or it isn't on a connected WABA.
+      const marketing_wa_phone_number_id = r.marketing_wa_phone_number_id || null;
+      const marketing_wa_display_phone = marketing_wa_phone_number_id
+        ? (r.marketing_wa_display_phone
+            || waba_accounts.find((w) => w.phone_number_id === marketing_wa_phone_number_id)?.phone_display
+            || null)
+        : null;
       const out = mapId(r);
       delete out.meta_access_token;
-      return { ...out, branch_count, wa_count, waba_accounts };
+      return {
+        ...out,
+        branch_count,
+        wa_count,
+        waba_accounts,
+        marketing_wa_phone_number_id,
+        marketing_wa_display_phone,
+      };
     }, 600);
     if (!data) return res.status(404).json({ error: 'Not found' });
     res.json(data);
@@ -9731,6 +9752,193 @@ router.get('/admin-messages', async (req, res) => {
   } catch (e) {
     req.log?.error?.({ err: e }, 'restaurant fetch admin thread failed');
     res.status(500).json({ success: false, message: 'Internal server error' });
+  }
+});
+
+// ─── DINE-IN CHECK-IN (STAFF MANUAL ENTRY) ────────────────────
+// Mirrors the WhatsApp QR scan path but driven by staff entering a
+// customer's phone at the table. Reuses the shared handler in
+// webhooks/whatsapp.js so points / ledger / journey-trigger semantics
+// stay identical between QR and staff sources. Tenant-ownership is
+// asserted via _assertBranchOwnedBy — passing a branch_id from another
+// restaurant returns 404 (never 403) per the project's standard.
+router.post('/dine-in/checkin', express.json(), async (req, res) => {
+  try {
+    const { phone, branch_id, source } = req.body || {};
+    if (!phone || !branch_id) {
+      return res.status(400).json({ success: false, message: 'phone and branch_id are required' });
+    }
+    const normalisedPhone = customerSvc.normalizePhone(phone);
+    if (!normalisedPhone) {
+      return res.status(400).json({ success: false, message: 'invalid phone' });
+    }
+    const branch = await _assertBranchOwnedBy(branch_id, req.restaurantId);
+    if (!branch) return res.status(404).json({ success: false, message: 'branch not found' });
+    const restaurant = await col('restaurants').findOne({ _id: String(req.restaurantId) });
+    if (!restaurant) return res.status(404).json({ success: false, message: 'restaurant not found' });
+
+    const { handleDineInCheckin } = require('../webhooks/whatsapp');
+    const result = await handleDineInCheckin(normalisedPhone, branch, restaurant, {
+      source: source || 'staff',
+    });
+    if (!result?.ok) {
+      return res.status(400).json({ success: false, message: result?.reason || 'check-in failed' });
+    }
+    return res.json({
+      success: true,
+      customer_id: result.customer_id,
+      customer_name: result.customer_name || null,
+      branch_id: result.branch_id,
+      visit_number: result.visit_number,
+      points_balance: result.points_balance,
+      milestone_hit: result.milestone_hit,
+    });
+  } catch (err) {
+    req.log?.error?.({ err }, 'dine-in staff check-in failed');
+    return res.status(500).json({ success: false, message: 'Internal server error' });
+  }
+});
+
+// ─── DINE-IN VISITS (READ) ────────────────────────────────────
+// Paginated history of check-ins for a branch, newest first. Returns
+// masked phone alongside customer_id so the dashboard can render a
+// customer column without leaking the full number. Page size is fixed
+// at 25 — small enough to keep the response lean, large enough that
+// most operators can scan a day's check-ins on one page.
+router.get('/dine-in/visits', async (req, res) => {
+  try {
+    const branchId = String(req.query.branch_id || '');
+    if (!branchId) return res.status(400).json({ success: false, message: 'branch_id query param is required' });
+    const branch = await _assertBranchOwnedBy(branchId, req.restaurantId);
+    if (!branch) return res.status(404).json({ success: false, message: 'branch not found' });
+
+    const page = Math.max(1, parseInt(String(req.query.page || '1'), 10) || 1);
+    const PAGE_SIZE = 25;
+    const skip = (page - 1) * PAGE_SIZE;
+
+    const cursor = col('dine_in_visits')
+      .find({ branch_id: branchId })
+      .sort({ created_at: -1 })
+      .skip(skip)
+      .limit(PAGE_SIZE);
+    const [rows, total] = await Promise.all([
+      cursor.toArray(),
+      col('dine_in_visits').countDocuments({ branch_id: branchId }),
+    ]);
+
+    const customerIds = Array.from(new Set(rows.map((r) => String(r.customer_id))));
+    const customers = customerIds.length
+      ? await col('customers').find({ _id: { $in: customerIds } }, { projection: { wa_phone: 1, name: 1 } }).toArray()
+      : [];
+    const byId = new Map(customers.map((c) => [String(c._id), c]));
+
+    const visits = rows.map((r) => {
+      const c = byId.get(String(r.customer_id));
+      return {
+        _id: String(r._id),
+        customer_id: String(r.customer_id),
+        customer_name: c?.name || null,
+        customer_phone_masked: c?.wa_phone ? maskPhone(c.wa_phone) : null,
+        source: r.source,
+        points_earned: Number(r.points_earned) || 0,
+        visit_number: Number(r.visit_number) || 0,
+        created_at: r.created_at,
+      };
+    });
+
+    return res.json({
+      success: true,
+      branch_id: branchId,
+      page,
+      page_size: PAGE_SIZE,
+      total,
+      pages: Math.max(1, Math.ceil(total / PAGE_SIZE)),
+      visits,
+    });
+  } catch (err) {
+    req.log?.error?.({ err }, 'dine-in visits read failed');
+    return res.status(500).json({ success: false, message: 'Internal server error' });
+  }
+});
+
+// ─── DINE-IN CONFIG (READ / UPDATE) ───────────────────────────
+// Per-branch settings: points_per_visit, milestone_thresholds (sorted
+// ascending, validated on PATCH), points_expiry_days, enabled.
+// GET    /api/restaurant/dine-in/config?branch_id=...
+// PATCH  /api/restaurant/dine-in/config  { branch_id, ...fields }
+router.get('/dine-in/config', async (req, res) => {
+  try {
+    const branchId = String(req.query.branch_id || '');
+    if (!branchId) return res.status(400).json({ success: false, message: 'branch_id query param is required' });
+    const branch = await _assertBranchOwnedBy(branchId, req.restaurantId);
+    if (!branch) return res.status(404).json({ success: false, message: 'branch not found' });
+    const cfg = branch.dine_in_config || {
+      points_per_visit: 10,
+      milestone_thresholds: [50, 100, 200],
+      points_expiry_days: 180,
+      enabled: false,
+    };
+    return res.json({ success: true, branch_id: branchId, dine_in_config: cfg });
+  } catch (err) {
+    req.log?.error?.({ err }, 'dine-in config read failed');
+    return res.status(500).json({ success: false, message: 'Internal server error' });
+  }
+});
+
+router.patch('/dine-in/config', express.json(), async (req, res) => {
+  try {
+    const { branch_id } = req.body || {};
+    if (!branch_id) return res.status(400).json({ success: false, message: 'branch_id is required' });
+    const branch = await _assertBranchOwnedBy(branch_id, req.restaurantId);
+    if (!branch) return res.status(404).json({ success: false, message: 'branch not found' });
+
+    const current = branch.dine_in_config || {
+      points_per_visit: 10,
+      milestone_thresholds: [50, 100, 200],
+      points_expiry_days: 180,
+      enabled: false,
+    };
+    const next = { ...current };
+
+    if (req.body.points_per_visit !== undefined) {
+      const v = Number(req.body.points_per_visit);
+      if (!Number.isFinite(v) || v < 0) {
+        return res.status(400).json({ success: false, message: 'points_per_visit must be a non-negative number' });
+      }
+      next.points_per_visit = v;
+    }
+    if (req.body.points_expiry_days !== undefined) {
+      const v = Number(req.body.points_expiry_days);
+      if (!Number.isFinite(v) || v < 0) {
+        return res.status(400).json({ success: false, message: 'points_expiry_days must be a non-negative number' });
+      }
+      next.points_expiry_days = v;
+    }
+    if (req.body.enabled !== undefined) {
+      next.enabled = !!req.body.enabled;
+    }
+    if (req.body.milestone_thresholds !== undefined) {
+      const arr = req.body.milestone_thresholds;
+      if (!Array.isArray(arr) || arr.some((x) => !Number.isFinite(Number(x)) || Number(x) < 0)) {
+        return res.status(400).json({ success: false, message: 'milestone_thresholds must be an array of non-negative numbers' });
+      }
+      const nums = arr.map(Number);
+      for (let i = 1; i < nums.length; i++) {
+        if (nums[i] <= nums[i - 1]) {
+          return res.status(400).json({ success: false, message: 'milestone_thresholds must be sorted strictly ascending' });
+        }
+      }
+      next.milestone_thresholds = nums;
+    }
+
+    await col('branches').updateOne(
+      { _id: String(branch._id) },
+      { $set: { dine_in_config: next, updated_at: new Date() } },
+    );
+    return res.json({ success: true, branch_id: String(branch._id), dine_in_config: next });
+  } catch (err) {
+    req.log?.error?.({ err }, 'dine-in config update failed');
+    return res.status(500).json({ success: false, message: 'Internal server error' });
   }
 });
 

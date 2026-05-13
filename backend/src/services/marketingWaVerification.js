@@ -52,7 +52,11 @@ async function verifyMarketingWaNumber(restaurantId) {
     let resp;
     try {
       resp = await axios.get(`${metaConfig.graphUrl}/${encodeURIComponent(phoneNumberId)}`, {
-        params: { fields: 'verified_name,code_verification_status,quality_rating,status' },
+        // display_phone_number is the human-readable number (e.g.
+        // "+91 98XXX XXXXX"). We persist it as marketing_wa_display_phone
+        // so dashboard surfaces (dine-in QR wa.me deeplink) can render
+        // the number without a second Meta call.
+        params: { fields: 'verified_name,code_verification_status,quality_rating,status,display_phone_number' },
         headers: { Authorization: `Bearer ${metaConfig.systemUserToken}` },
         timeout: 10000,
       });
@@ -79,11 +83,19 @@ async function verifyMarketingWaNumber(restaurantId) {
     const data = resp?.data || {};
     const statusValue = String(data.status || '').toUpperCase();
     const qualityRating = data.quality_rating || null;
+    // display_phone_number is intrinsic identity metadata — capture on
+    // both the healthy and flagged paths so the dashboard still shows
+    // the number even if Meta reports it as RESTRICTED. Null when Meta
+    // omits the field (older WABA accounts can lack it).
+    const displayPhone = typeof data.display_phone_number === 'string' && data.display_phone_number.length > 0
+      ? data.display_phone_number
+      : null;
 
     if (HEALTHY_STATUSES.has(statusValue)) {
       await _persist(restaurantId, {
         marketing_wa_status: 'active',
         marketing_wa_quality_rating: qualityRating,
+        marketing_wa_display_phone: displayPhone,
         marketing_wa_verified_at: now,
         marketing_wa_last_checked_at: now,
         marketing_wa_error_message: null,
@@ -95,6 +107,7 @@ async function verifyMarketingWaNumber(restaurantId) {
     await _persist(restaurantId, {
       marketing_wa_status: 'flagged',
       marketing_wa_quality_rating: qualityRating,
+      marketing_wa_display_phone: displayPhone,
       marketing_wa_last_checked_at: now,
       marketing_wa_error_message: statusValue || 'unknown_status',
     });

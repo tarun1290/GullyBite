@@ -39,6 +39,13 @@ const DEFAULT_JOURNEY_CONFIG = {
   // onboarding for parity with cart_recovery — same gating chain
   // applies inside executeJourney.
   reorder_suggestion: { enabled: true, trigger_day: 7, template_id: null, custom_variable_values: {} },
+  // Event-driven: fired by webhooks/whatsapp.js handleDineInCheckin
+  // when a customer scans a branch QR (or staff records a manual visit)
+  // and the branch has dine_in_config.enabled=true. Template selection
+  // is overridden inside executeJourney because the campaign_templates
+  // use_case enum doesn't include 'dine_in_checkin' — we pick by
+  // template_id (milestone vs. welcome) using overrideVariables.milestone_hit.
+  dine_in_checkin: { enabled: true, template_id: null, custom_variable_values: {} },
 };
 
 const JOURNEY_TYPES = Object.keys(DEFAULT_JOURNEY_CONFIG);
@@ -91,7 +98,17 @@ async function pickTemplate(journeyType, configEntry) {
 
 // Main entry. Never throws — returns a plain `{ ok, reason }` shape so
 // callers can log without crashing the webhook / cron tick.
-async function executeJourney(restaurantId, customerId, journeyType, overrideVariables = {}) {
+//
+// options.outboundPhoneNumberId: optional explicit outbound Meta
+// phone_number_id (typically resolved at the call site via
+// services/whatsapp.getOutboundNumberId). When provided we stamp it
+// onto the materialised marketing_campaigns doc as
+// `outbound_phone_number_id`; sendCampaign honours that before its
+// own marketing/primary fallback. Lets event-driven promotional
+// callers (dine-in QR check-in, future surfaces) make the routing
+// decision explicit at the call site instead of relying on the
+// implicit resolution inside sendCampaign.
+async function executeJourney(restaurantId, customerId, journeyType, overrideVariables = {}, options = {}) {
   try {
     if (!restaurantId || !customerId || !JOURNEY_TYPES.includes(journeyType)) {
       return { ok: false, reason: 'bad_args' };
@@ -153,7 +170,24 @@ async function executeJourney(restaurantId, customerId, journeyType, overrideVar
       }
     }
 
-    const template = await pickTemplate(journeyType, entry);
+    // Dine-in check-in has no matching use_case in the campaign_templates
+    // enum — pick the template by name based on whether this visit crossed
+    // a milestone (loyalty_milestone) or is a first/regular visit (welcome).
+    // If the journey config pins a template_id we honour it via the normal
+    // path; otherwise this branch resolves it.
+    let template;
+    if (journeyType === 'dine_in_checkin' && !entry.template_id) {
+      const targetTemplateId = overrideVariables?.milestone_hit
+        ? 'marketing_loyalty_milestone_v1'
+        : 'marketing_welcome_v1';
+      template = await col('campaign_templates').findOne({
+        template_id: targetTemplateId,
+        is_active: true,
+        meta_approval_status: 'approved',
+      });
+    } else {
+      template = await pickTemplate(journeyType, entry);
+    }
     if (!template) {
       log.warn({ restaurantId, journeyType }, 'journey: no approved template for use_case');
       return { ok: false, reason: 'no_template' };
@@ -224,6 +258,11 @@ async function executeJourney(restaurantId, customerId, journeyType, overrideVar
       estimated_cost_rs: perMsgRs,
       actual_cost_rs: 0,
       per_message_cost_rs: perMsgRs,
+      // Optional explicit outbound number override (set by the call
+      // site via options.outboundPhoneNumberId). Null when the caller
+      // didn't resolve one — sendCampaign falls through to its
+      // restaurant.marketing_wa_phone_number_id || waAccount path.
+      outbound_phone_number_id: options.outboundPhoneNumberId || null,
       created_at: now,
       updated_at: now,
     };

@@ -144,6 +144,17 @@ const branches = {
     fssai_number:          { type: 'string' },  // 14-digit, required for food sync
     gst_number:            { type: 'string' },  // 15-char GSTIN, optional
     catalog_id:            { type: 'string' },
+    // Dine-in QR check-in config. enabled:false by default so existing
+    // branches are unaffected; the QR scan webhook still acks with a
+    // plain "Thanks for visiting!" message and skips points/journey.
+    // milestone_thresholds must be sorted ascending; validated at PATCH
+    // time in routes/restaurant.js.
+    dine_in_config:        { type: 'object', default: {
+      points_per_visit: 10,
+      milestone_thresholds: [50, 100, 200],
+      points_expiry_days: 180,
+      enabled: false,
+    } },
     created_at:            { type: 'date', required: true },
     updated_at:            { type: 'date' },
   },
@@ -151,6 +162,12 @@ const branches = {
     { key: { restaurant_id: 1 } },
     { key: { city: 1 } },
     { key: { is_active: 1 } },
+    // Slug lookup is per-restaurant in the QR scan path (a customer's
+    // scan message lands on a phone_number_id we resolve to a restaurant
+    // first, then we look up the branch by slug under that restaurant).
+    // Not unique globally — two restaurants can both have a "main"
+    // branch slug.
+    { key: { restaurant_id: 1, branch_slug: 1 } },
   ],
 };
 
@@ -474,6 +491,13 @@ const customers = {
     marketing_opted_in:        { type: 'boolean', default: true },
     marketing_opted_in_at:     { type: 'date' },
     marketing_opted_in_source: { type: 'string' },
+    // Per-restaurant dine-in totals. Updated atomically via $inc on
+    // every QR / staff check-in. Lives on the global customers doc so
+    // a customer's points travel across branches; per-row ledger lives
+    // in a separate append-only collection inserted by the check-in
+    // handler in webhooks/whatsapp.js.
+    dine_in_points:        { type: 'number', default: 0 },
+    dine_in_total_visits:  { type: 'number', default: 0 },
     created_at:            { type: 'date', required: true },
     updated_at:            { type: 'date' },
   },

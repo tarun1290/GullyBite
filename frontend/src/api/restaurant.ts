@@ -8,6 +8,10 @@ import type {
   Campaign,
   CaptainListingStatus,
   CaptainSuggestion,
+  DineInCheckinResponse,
+  DineInConfig,
+  DineInConfigResponse,
+  DineInVisitsResponse,
   MenuAllResponse,
   Order,
   PenaltiesSummary,
@@ -1235,6 +1239,48 @@ export async function getStaffedBranches(): Promise<{
     total_branches: number;
     all_staffed: boolean;
   }>('/api/restaurant/staffed-branches');
+  return data;
+}
+
+// ── Dine-in (QR check-in surface) ───────────────────────────────
+// Distinct from the legacy loyalty-program/dine-in-credit route
+// (delivery-loyalty manual credit). These four endpoints back the new
+// /dashboard/dine-in surface that surfaces the per-branch QR code,
+// points config, manual check-in entry, and visit history. All mounted
+// on the restaurant router so requireAuth is inherited.
+
+export async function getDineInConfig(branchId: string): Promise<DineInConfigResponse> {
+  const { data } = await client.get<DineInConfigResponse>(
+    '/api/restaurant/dine-in/config',
+    { params: { branch_id: branchId } },
+  );
+  return data;
+}
+
+export async function updateDineInConfig(
+  branchId: string,
+  config: Partial<DineInConfig>,
+): Promise<DineInConfigResponse> {
+  const { data } = await client.patch<DineInConfigResponse>(
+    '/api/restaurant/dine-in/config',
+    { branch_id: branchId, ...config },
+  );
+  return data;
+}
+
+export async function getDineInVisits(branchId: string, page: number = 1): Promise<DineInVisitsResponse> {
+  const { data } = await client.get<DineInVisitsResponse>(
+    '/api/restaurant/dine-in/visits',
+    { params: { branch_id: branchId, page } },
+  );
+  return data;
+}
+
+export async function manualCheckin(phone: string, branchId: string): Promise<DineInCheckinResponse> {
+  const { data } = await client.post<DineInCheckinResponse>(
+    '/api/restaurant/dine-in/checkin',
+    { phone, branch_id: branchId, source: 'staff' },
+  );
   return data;
 }
 

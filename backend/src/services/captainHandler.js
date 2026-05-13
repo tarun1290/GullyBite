@@ -448,7 +448,7 @@ async function handleBrowsing(db, redisClient, city, customer, session, message,
         const exists = await db.collection('referral_links').findOne({ code });
         if (!exists) break;
       }
-      const waLink = `https://wa.me/${phone}?text=${encodeURIComponent('Hi 👋 GBREF-' + code)}`;
+      const waLink = `https://wa.me/${phone}?text=${encodeURIComponent('Hi! GBREF-' + code)}`;
       await db.collection('referral_links').insertOne({
         _id: newId(),
         code,

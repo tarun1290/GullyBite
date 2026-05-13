@@ -377,6 +377,16 @@ export interface Restaurant {
   meta_catalog_id?: string;
   catalog_id?: string;
   waba_accounts?: WabaAccount[];
+  // Marketing WhatsApp number — the dedicated promotional number used
+  // by campaigns, cart-recovery, and dine-in QR check-in. The ID is
+  // the raw Meta phone_number_id; display_phone is the human-readable
+  // number joined server-side from the matching waba_accounts entry,
+  // for surfaces (e.g. dine-in QR wa.me deeplink) that need it without
+  // walking the array themselves. Both null when no marketing number
+  // is configured — render a "configure in Settings" prompt in that
+  // case rather than falling back to the ordering number.
+  marketing_wa_phone_number_id?: string | null;
+  marketing_wa_display_phone?: string | null;
   campaign_daily_cap?: number | null;
   cart_recovery_discount_pct?: number | null;
   status?: string;
@@ -444,6 +454,60 @@ export interface BranchHours {
   saturday?: BranchHoursDay;
   sunday?: BranchHoursDay;
   [k: string]: BranchHoursDay | undefined;
+}
+
+// ── Dine-in ─────────────────────────────────────────────────────────
+// Per-branch QR check-in config. Mirrors branches.dine_in_config on
+// the backend. enabled:false by default so existing branches stay
+// unaffected; the QR scan path still acks with a plain
+// "Thanks for visiting!" until the operator opts in. Thresholds are
+// stored sorted ascending — the PATCH route validates that contract.
+export interface DineInConfig {
+  points_per_visit: number;
+  milestone_thresholds: number[];
+  points_expiry_days: number;
+  enabled: boolean;
+}
+
+// One row in the dine_in_visits ledger. visit_number is the nth visit
+// for this customer at this branch (precomputed at insert time on the
+// backend so the dashboard can render "Visit #N" without a count
+// query on read). customer_phone_masked is the server-side mask
+// (••••XXXX) — full phone never leaves the backend for this surface.
+export interface DineInVisit {
+  _id: string;
+  customer_id: string;
+  customer_name?: string | null;
+  customer_phone_masked?: string | null;
+  source: 'qr' | 'staff' | 'pos';
+  points_earned: number;
+  visit_number: number;
+  created_at: string;
+}
+
+export interface DineInVisitsResponse {
+  success: boolean;
+  branch_id: string;
+  page: number;
+  page_size: number;
+  total: number;
+  pages: number;
+  visits: DineInVisit[];
+}
+
+export interface DineInConfigResponse {
+  success: boolean;
+  branch_id: string;
+  dine_in_config: DineInConfig;
+}
+
+export interface DineInCheckinResponse {
+  success: boolean;
+  customer_id: string;
+  branch_id: string;
+  visit_number: number;
+  points_balance: number;
+  milestone_hit: number | null;
 }
 
 // ── Menu ────────────────────────────────────────────────────────────

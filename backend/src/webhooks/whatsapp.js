@@ -1104,6 +1104,41 @@ const handleTextMessage = async (msg, customer, conv, waAccount) => {
   const to = customerIdentity.resolveRecipient(customer);
   let rawText = msg.text.body.trim();
 
+  // ── Dine-in QR check-in (DININ-{branch-slug}) ─────────────────
+  // Customer scans a per-branch QR code that pre-fills a WhatsApp
+  // message of the form "DININ-{branch-slug}" pointed at the
+  // restaurant's WhatsApp number. We detect the format here, BEFORE
+  // any other routing (greetings, intent, STOP keyword, dine-in
+  // feedback rating prompt), short-circuit on match, and never fall
+  // through to the catalog / order flow. Non-matching messages are
+  // not affected — control passes to the next handler block.
+  {
+    const dineInMatch = rawText.match(/^DININ-([\w-]+)$/i);
+    if (dineInMatch) {
+      const branchSlug = dineInMatch[1];
+      const restaurantId = waAccount.restaurant_id;
+      try {
+        const restaurant = restaurantId
+          ? await col('restaurants').findOne({ _id: String(restaurantId) })
+          : null;
+        const branch = restaurant
+          ? await col('branches').findOne({ restaurant_id: String(restaurantId), branch_slug: branchSlug })
+          : null;
+        if (!branch) {
+          log.warn({ restaurantId, branchSlug }, 'dine-in QR: branch not found for slug — acking and dropping');
+          await wa.sendText(pid, token, to, 'Thanks for visiting!').catch(() => {});
+          return;
+        }
+        const customerPhone = customer.wa_phone || customerIdentity.resolveRecipient(customer);
+        await handleDineInCheckin(customerPhone, branch, restaurant, { source: 'qr' });
+      } catch (err) {
+        log.error({ err, branchSlug }, 'dine-in QR check-in failed');
+        await wa.sendText(pid, token, to, 'Thanks for visiting!').catch(() => {});
+      }
+      return;
+    }
+  }
+
   // ── Dine-in rating text/contextual reply (Prompt 8) ─────────
   // Fires when the customer replies to our list message with a
   // number (1-5) or quotes the prompt directly. Matches by context.id
@@ -1149,6 +1184,15 @@ const handleTextMessage = async (msg, customer, conv, waAccount) => {
   if (gbrefMatch) {
     const refCode = gbrefMatch[1];
     log.info({ refCode, phone: (customer.wa_phone || customer.bsuid)?.slice(-4) }, 'GBREF detected');
+    // Case-sensitive presence flag captured BEFORE the strip below
+    // mutates rawText. Used after stripping to decide whether to
+    // route this message through the canonical new-customer welcome
+    // handler further down. Case-sensitive per spec — every captain
+    // prefill produced by gbrefRedirect.js + captainHandler.js uses
+    // literal uppercase 'GBREF-', so this catches every captain
+    // handoff while ignoring any lowercase 'gbref-' the regex above
+    // would have matched case-insensitively.
+    const hadGbrefCaseSensitive = rawText.includes('GBREF-');
     try {
       const refLink = await col('referral_links').findOne({ code: refCode, status: 'active' });
       if (refLink) {
@@ -1175,6 +1219,23 @@ const handleTextMessage = async (msg, customer, conv, waAccount) => {
     rawText = rawText.replace(/GBREF-[a-zA-Z0-9]{4,10}/gi, '').trim();
     if (!rawText) rawText = 'Hi'; // If message was only the code, treat as greeting
     msg.text.body = rawText;
+
+    // Captain-referred customers (wa.me prefill contains 'GBREF-')
+    // are first-message-by-definition — they tapped a deep-link.
+    // The downstream welcome handler at ~line 1385 uses an exact
+    // Array.includes check against ['HI','HAI','HELLO','HEY',
+    // 'START','MENU','ORDER']; prefills like "Hi! GBREF-{code}"
+    // strip to "Hi!" which misses the list and would leave the
+    // customer with no response. Rewrite rawText to the canonical
+    // 'Hi' here so the SAME welcome+address-flow handler that runs
+    // for any other new customer fires — no duplicated logic, no
+    // captain-specific response code path. The empty-residual
+    // fallback above already does this for pure-code prefills; this
+    // widens the rewrite to cover all GBREF-bearing inputs.
+    if (hadGbrefCaseSensitive) {
+      rawText = 'Hi';
+      msg.text.body = rawText;
+    }
   }
 
   // ── STOP / UNSUBSCRIBE keyword (marketing block-list) ────────────
@@ -4387,6 +4448,165 @@ const captureCustomerMessage = async (msg, customer, conv, waAccount) => {
   }
 };
 
+// ─── DINE-IN CHECK-IN HANDLER ─────────────────────────────────
+// Shared by the WhatsApp DININ-{slug} webhook path and the staff
+// manual-entry route (POST /api/restaurant/dine-in/checkin). Idempotent
+// at the customer-row level (findOrCreateByPhone) so retries don't
+// create duplicate customer docs — but a SECOND insert into
+// dine_in_visits is intentional: each scan is its own visit. Callers
+// that want to dedupe a double-scan must do so before invoking this.
+//
+//   phone      — customer's wa_phone (E.164-ish digit string)
+//   branch     — branches doc (must include _id, restaurant_id, dine_in_config)
+//   restaurant — restaurants doc (must include _id, marketing_wa_phone_number_id,
+//                access_token-bearing waAccount lookup happens here)
+//   opts.source — 'qr' (default) | 'staff' | 'pos'
+//
+// Behaviour:
+//   1. Upsert customer by phone (global identity).
+//   2. If branch.dine_in_config.enabled !== true: send plain
+//      "Thanks for visiting!" and return early (no points, no ledger).
+//   3. Insert dine_in_visits row with the next visit_number for
+//      (customer_id, branch_id).
+//   4. $inc customer.dine_in_points + customer.dine_in_total_visits.
+//   5. Compute milestone_hit: the highest threshold the new balance
+//      crossed in this check-in (i.e. new_balance >= T > old_balance).
+//   6. Fire journeyExecutor.executeJourney with type 'dine_in_checkin'
+//      and context { milestone_hit, points_balance, visit_number }.
+//
+// Never throws — returns { ok, reason, ... } so the WhatsApp webhook
+// can always 200 Meta. Returned shape:
+//   { ok: true, customer_id, branch_id, visit_number, points_balance,
+//     milestone_hit, journeyResult }
+//   { ok: false, reason }
+const handleDineInCheckin = async (phone, branch, restaurant, opts = {}) => {
+  try {
+    if (!phone || !branch || !restaurant) {
+      return { ok: false, reason: 'bad_args' };
+    }
+    const source = opts.source || 'qr';
+    if (!['qr', 'staff', 'pos'].includes(source)) {
+      return { ok: false, reason: 'bad_source' };
+    }
+    const customerSvc = require('../services/customer.service');
+    const journeyExecutor = require('../services/journeyExecutor');
+
+    const customer = await customerSvc.findOrCreateByPhone(phone);
+    if (!customer) return { ok: false, reason: 'customer_upsert_failed' };
+
+    // Find a waAccount we can send a reply on. Prefer the marketing
+    // number if configured (consistent with how journey templates send),
+    // otherwise any whatsapp_accounts row for this restaurant.
+    const waAccount = await col('whatsapp_accounts').findOne({
+      restaurant_id: String(restaurant._id),
+      $or: [{ account_type: 'restaurant' }, { account_type: { $exists: false } }],
+    });
+
+    const dineCfg = branch.dine_in_config || {};
+    if (!dineCfg.enabled) {
+      if (waAccount?.phone_number_id && waAccount?.access_token) {
+        await wa.sendText(waAccount.phone_number_id, waAccount.access_token, phone, 'Thanks for visiting!')
+          .catch((err) => log.warn({ err: err?.message }, 'dine-in: thanks-only reply failed'));
+      }
+      return { ok: true, reason: 'feature_disabled', customer_id: String(customer._id) };
+    }
+
+    const pointsPerVisit = Number(dineCfg.points_per_visit) || 0;
+    const thresholds = Array.isArray(dineCfg.milestone_thresholds) ? dineCfg.milestone_thresholds : [];
+    const now = new Date();
+
+    // visit_number = count of prior visits at this branch + 1. Computed
+    // BEFORE we insert the new ledger row so the value reflects the
+    // current scan, not the row we're about to write.
+    const priorVisits = await col('dine_in_visits').countDocuments({
+      customer_id: String(customer._id),
+      branch_id: String(branch._id),
+    });
+    const visit_number = priorVisits + 1;
+
+    await col('dine_in_visits').insertOne({
+      _id: newId(),
+      restaurant_id: String(restaurant._id),
+      branch_id: String(branch._id),
+      customer_id: String(customer._id),
+      source,
+      points_earned: pointsPerVisit,
+      visit_number,
+      created_at: now,
+    });
+
+    // Atomic $inc, then read back to compute milestone_hit against the
+    // PRE-increment balance. Using findOneAndUpdate with returnDocument
+    // 'after' gives us the new balance in one round-trip; we derive the
+    // pre-balance by subtracting points_per_visit. Concurrent check-ins
+    // for the same customer (unlikely but possible) would each see their
+    // own slice of the increment and fire milestone independently — the
+    // 48h frequency cap in executeJourney keeps that from sending twice.
+    const updated = await col('customers').findOneAndUpdate(
+      { _id: String(customer._id) },
+      {
+        $inc: { dine_in_points: pointsPerVisit, dine_in_total_visits: 1 },
+        $set: { updated_at: now },
+      },
+      { returnDocument: 'after' },
+    );
+    const after = updated?.value || await col('customers').findOne({ _id: String(customer._id) });
+    const points_balance = Number(after?.dine_in_points || 0);
+    const prevBalance = points_balance - pointsPerVisit;
+
+    // milestone_hit: the LARGEST threshold strictly between prev and
+    // new (inclusive of new). If multiple thresholds were crossed in
+    // one visit (huge points_per_visit), we report the highest — the
+    // milestone template renders the most impressive number.
+    let milestone_hit = null;
+    for (const t of thresholds) {
+      const n = Number(t);
+      if (!Number.isFinite(n)) continue;
+      if (prevBalance < n && points_balance >= n) {
+        if (milestone_hit === null || n > milestone_hit) milestone_hit = n;
+      }
+    }
+
+    const journeyContext = { points_balance, visit_number };
+    if (milestone_hit !== null) journeyContext.milestone_hit = milestone_hit;
+
+    // Dine-in is a promotional/marketing surface — route the journey
+    // send through the restaurant-configured marketing number when set
+    // (falls back to the primary WABA number otherwise, which is the
+    // acceptable behaviour per spec). Same call shape as
+    // services/campaigns.js:220 and services/cart-recovery.js:174 so
+    // the three promotional paths stay uniform.
+    const outboundPhoneNumberId = wa.getOutboundNumberId({
+      ...restaurant,
+      phoneNumberId: waAccount?.phone_number_id,
+      marketingPhoneNumberId: restaurant.marketing_wa_phone_number_id,
+    });
+
+    const journeyResult = await journeyExecutor.executeJourney(
+      String(restaurant._id),
+      String(customer._id),
+      'dine_in_checkin',
+      journeyContext,
+      { outboundPhoneNumberId },
+    );
+
+    return {
+      ok: true,
+      customer_id: String(customer._id),
+      customer_name: after?.name || customer.name || null,
+      branch_id: String(branch._id),
+      visit_number,
+      points_balance,
+      milestone_hit,
+      journeyResult,
+    };
+  } catch (err) {
+    log.error({ err, phone: phone?.slice?.(-4), branchId: branch?._id }, 'handleDineInCheckin crashed');
+    return { ok: false, reason: 'error' };
+  }
+};
+
 module.exports = router;
 module.exports.sendRatingRequest = sendRatingRequest;
 module.exports.processWhatsAppWebhook = processWhatsAppWebhook;
+module.exports.handleDineInCheckin = handleDineInCheckin;

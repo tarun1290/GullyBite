@@ -7,7 +7,7 @@
 // ahead of /api/* auth so deep-link taps from the captain's marketing
 // template work without an auth wall.
 //
-//   GET /r/:code  → 302 https://wa.me/<phone>?text=GBREF-<code>
+//   GET /r/:code  → 302 https://wa.me/<phone>?text=Hi!%20GBREF-<code>
 //
 // Unknown / inactive codes 302 to the configured BASE_URL (or '/') so
 // we never leak whether a code exists.
@@ -42,7 +42,7 @@ router.get('/:code', async (req, res) => {
     if (!phone) return res.redirect(302, fallbackUrl());
     // Click count bump — fire-and-forget; never block the redirect.
     col('referral_links').updateOne({ _id: link._id }, { $inc: { click_count: 1 } }).catch(() => {});
-    const url = `https://wa.me/${phone}?text=${encodeURIComponent('GBREF-' + code)}`;
+    const url = `https://wa.me/${phone}?text=${encodeURIComponent('Hi! GBREF-' + code)}`;
     return res.redirect(302, url);
   } catch (err) {
     log.warn({ err: err.message, code }, 'GBREF redirect failed');

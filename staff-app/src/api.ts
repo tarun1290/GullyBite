@@ -321,6 +321,34 @@ export async function declineOrder(
   });
 }
 
+// Dine-in QR / staff manual check-in. The backend handler
+// (handleDineInCheckin in webhooks/whatsapp.js, exposed via
+// POST /api/restaurant/dine-in/checkin) is shared with the QR scan
+// path — we just stamp `source: 'staff'` so the dine_in_visits row
+// is attributable to the staff app. Returns the visit number and
+// updated points balance so the screen can render a confirmation
+// card; milestone_hit is non-null when this visit crossed a
+// configured threshold (the journey fires server-side regardless).
+export type DineInCheckinResponse = {
+  success: boolean;
+  customer_id: string;
+  branch_id: string;
+  customer_name?: string | null;
+  visit_number: number;
+  points_balance: number;
+  milestone_hit: number | null;
+};
+
+export async function checkInDineIn(input: {
+  phone: string;
+  branch_id: string;
+}): Promise<DineInCheckinResponse> {
+  return request<DineInCheckinResponse>('/api/restaurant/dine-in/checkin', {
+    method: 'POST',
+    body: { phone: input.phone, branch_id: input.branch_id, source: 'staff' },
+  });
+}
+
 // Status update for CONFIRMED → PREPARING and PREPARING → PACKED only.
 // Staff cannot transition to DISPATCHED, DELIVERED, or any fault state.
 export async function updateOrderStatus(
