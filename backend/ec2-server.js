@@ -365,6 +365,10 @@ app.use('/api/admin', jsonAndSanitize(), require('./src/routes/adminUsers'));
 app.use('/api/admin/cities', jsonAndSanitize(), require('./src/routes/cityListings'));
 app.use('/api/admin/cities', jsonAndSanitize(), require('./src/routes/cities'));
 app.use('/api/admin/tag-candidates', jsonAndSanitize(), require('./src/routes/tagCandidates'));
+// Customer-persona admin endpoints. MUST mount BEFORE the catch-all
+// /api/admin router so /api/admin/personas/* resolves to the dedicated
+// handler rather than falling through to legacy admin.js.
+app.use('/api/admin/personas', jsonAndSanitize(), require('./src/routes/customerPersonas'));
 app.use('/api/admin', jsonAndSanitize(), require('./src/routes/admin'));
 app.use('/api/admin/pincodes', jsonAndSanitize(), require('./src/routes/adminPincodes'));
 app.use('/api/customer', jsonAndSanitize(), require('./src/routes/customer'));

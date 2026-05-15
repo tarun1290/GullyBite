@@ -486,5 +486,27 @@ router.get('/owner-daily-summary', async (req, res) => {
   runOwnerDailySummary();
 });
 
+// ─── PERSONA REBUILD (daily) ─────────────────────────────────
+// Recomputes customer_personas for every customer with user_signals or
+// orders activity in the last 30 days. POST per spec — the CRON_SECRET
+// gate on router.use covers both methods.
+router.post('/personas/rebuild-daily', async (req, res) => {
+  res.json({ ok: true, message: 'persona-rebuild-daily started', timestamp: new Date().toISOString() });
+  try {
+    const { runDailyPersonaRebuild } = require('../jobs/rebuildPersonas');
+    const result = await runDailyPersonaRebuild();
+    log.info(result, 'persona rebuild complete');
+    logActivity({
+      actorType: 'system',
+      action: 'cron.persona_rebuild',
+      category: 'analytics',
+      description: `Persona rebuild: processed=${result.processed} updated=${result.updated} failed=${result.failed}`,
+      severity: result.failed > 0 ? 'warning' : 'info',
+    });
+  } catch (e) {
+    log.error({ err: e }, 'persona rebuild error');
+  }
+});
+
 module.exports = router;
 module.exports.runOwnerDailySummary = runOwnerDailySummary;

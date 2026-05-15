@@ -14,8 +14,12 @@ import type {
   CityInterestLeaderboard,
   CityListing,
   CityWabaMeta,
+  CustomerPersona,
   ListingAnalytics,
   MetaPhoneNumber,
+  PersonaDistribution,
+  PersonaQueryParams,
+  PersonaQueryResult,
   QueryParams,
   RequestBody,
   TagTaxonomy,
@@ -1228,6 +1232,57 @@ export async function getListingAnalytics(slug: string, listingId: string, days?
   const params: Record<string, number> = {};
   if (typeof days === 'number') params.days = days;
   const { data } = await client.get<ListingAnalytics>(`/api/admin/cities/${encodeURIComponent(slug)}/listings/${encodeURIComponent(listingId)}/analytics`, { params });
+  return data;
+}
+
+// ── Customer Personas ──────────────────────────────────────────────
+// Read + rebuild endpoints for the customer persona document. Backend
+// gates the routes to super_admin / city_ops and pre-masks PII before
+// returning sample rows from the audience query.
+
+export async function getCustomerPersona(
+  customerId: string,
+): Promise<{ customer: { id: string; name?: string; phone?: string }; persona: CustomerPersona | null }> {
+  const { data } = await client.get<{ customer: { id: string; name?: string; phone?: string }; persona: CustomerPersona | null }>(
+    `/api/admin/personas/${encodeURIComponent(customerId)}`,
+  );
+  return data;
+}
+
+export async function rebuildCustomerPersona(customerId: string): Promise<CustomerPersona> {
+  const { data } = await client.post<CustomerPersona>(
+    `/api/admin/personas/${encodeURIComponent(customerId)}/rebuild`,
+  );
+  return data;
+}
+
+export async function rebuildPersonasBatch(
+  body: { city_id?: string; since?: string },
+): Promise<{ queued: number }> {
+  const { data } = await client.post<{ queued: number }>('/api/admin/personas/rebuild-batch', body);
+  return data;
+}
+
+export async function queryPersonas(params: PersonaQueryParams): Promise<PersonaQueryResult> {
+  // Backend parses array params as CSV — keep encoding here so callers
+  // pass a plain object and don't have to think about transport.
+  const searchParams = new URLSearchParams();
+  if (params.city_id) searchParams.set('city_id', params.city_id);
+  if (params.cuisine) searchParams.set('cuisine', params.cuisine);
+  if (params.min_cuisine_score != null) searchParams.set('min_cuisine_score', String(params.min_cuisine_score));
+  (['price_sensitivity', 'order_frequency', 'veg_strictness', 'discovery_stage', 'area'] as const).forEach((k) => {
+    const v = params[k];
+    if (v && v.length) searchParams.set(k, v.join(','));
+  });
+  const { data } = await client.get<PersonaQueryResult>(
+    `/api/admin/personas/query?${searchParams.toString()}`,
+  );
+  return data;
+}
+
+export async function getPersonaDistribution(cityId?: string): Promise<PersonaDistribution> {
+  const qs = cityId ? `?city_id=${encodeURIComponent(cityId)}` : '';
+  const { data } = await client.get<PersonaDistribution>(`/api/admin/personas/distribution${qs}`);
   return data;
 }
 

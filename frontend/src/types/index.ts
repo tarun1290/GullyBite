@@ -634,6 +634,65 @@ export interface Customer {
   [k: string]: unknown;
 }
 
+// ── Customer Persona ────────────────────────────────────────────────
+// Mirrors the persona document maintained by the persona builder
+// (super_admin / city_ops scoped endpoints under /api/admin/personas/*).
+// Drives the admin Personas dashboard, inspector, and audience query
+// builder. Field set is contract-locked with the backend builder; new
+// fields must bump schema_version on both ends.
+
+export interface CuisineAffinityScore { [cuisine: string]: number }
+
+export interface CustomerPersona {
+  customer_id: string;
+  cuisine_affinity: CuisineAffinityScore;
+  price_sensitivity: 'budget' | 'mid' | 'premium';
+  order_frequency: 'daily' | 'weekly' | 'biweekly' | 'monthly' | 'lapsed' | 'never';
+  time_patterns: Array<'breakfast' | 'lunch' | 'dinner' | 'late_night'>;
+  veg_strictness: 'strict_veg' | 'flexible_veg' | 'omnivore';
+  discovery_stage: 'never_active' | 'captain_browser' | 'converted' | 'repeat_customer' | 'loyal';
+  area_clusters: string[];
+  engagement_score: number;
+  last_active_at: string | null;
+  customer_lifetime_value_rs: number;
+  total_orders: number;
+  gbref_conversion_count: number;
+  total_captain_sessions: number;
+  primary_city_id: string | null;
+  schema_version: number;
+  recompute_at?: string;
+}
+
+export interface PersonaDistribution {
+  discovery_stage: Record<string, number>;
+  price_sensitivity: Record<string, number>;
+  order_frequency: Record<string, number>;
+  veg_strictness: Record<string, number>;
+}
+
+export interface PersonaSampleRow {
+  customer_id: string;
+  discovery_stage: CustomerPersona['discovery_stage'];
+  top_cuisines: Array<{ cuisine: string; score: number }>;
+  last_active_at: string | null;
+}
+
+export interface PersonaQueryResult {
+  count: number;
+  sample: PersonaSampleRow[];
+}
+
+export interface PersonaQueryParams {
+  city_id?: string;
+  cuisine?: string;
+  min_cuisine_score?: number;
+  price_sensitivity?: string[];
+  order_frequency?: string[];
+  veg_strictness?: string[];
+  discovery_stage?: string[];
+  area?: string[];
+}
+
 // ── Analytics ───────────────────────────────────────────────────────
 
 export interface AnalyticsSummary {

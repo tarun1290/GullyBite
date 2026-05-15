@@ -121,6 +121,14 @@ async function runReengagementJob(db, redisClient, listingId, cityId) {
     const to = customer.wa_phone || customer.bsuid;
     if (!to) { skippedCount++; continue; }
 
+    // Pre-generate the marketing_messages._id so we can embed it on
+    // the referral_links row BEFORE the send. The same id is reused
+    // when the marketing_messages row is inserted below (after the
+    // wa.sendTemplate call). This is what lets gbrefRedirect.js stamp
+    // tapped_at / clicked back onto the originating marketing row on
+    // a GBREF tap.
+    const marketingMessageId = newId();
+
     // STEP 4 — generate GBREF code; insert referral_links + referrals
     // (mirror captainHandler.js order_now branch). source name is
     // distinct so analytics can split organic captain handoffs from
@@ -146,6 +154,7 @@ async function runReengagementJob(db, redisClient, listingId, cityId) {
       status: 'active',
       created_by: 'city_captain_reengagement',
       source: 'city_captain_reengagement',
+      marketing_message_id: marketingMessageId,
       created_at: new Date(),
       expires_at: null,
     });
@@ -208,7 +217,7 @@ async function runReengagementJob(db, redisClient, listingId, cityId) {
     const platformChargeRs = Number((perMessageCostRs * markupMultiplier).toFixed(4));
     const platformMarginRs = Number((platformChargeRs - perMessageCostRs).toFixed(4));
     await db.collection('marketing_messages').insertOne({
-      _id: newId(),
+      _id: marketingMessageId,
       message_id: messageId ? String(messageId) : null,
       campaign_source: 'city_captain_reengagement',
       listing_id: listingId,

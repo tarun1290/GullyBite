@@ -202,6 +202,14 @@ const col = (name) => {
   return _wrapWithRetry(_db.collection(name));
 };
 
+// Get the raw db handle. Used by service functions whose API was designed
+// around accepting a `db` arg (e.g. services/personaComputer.js). Most
+// callers should prefer `col(name)` so they pick up the retry wrapper.
+const getDb = () => {
+  if (!_db) throw new Error('MongoDB not connected yet');
+  return _db;
+};
+
 // Public retry helper for multi-step / cursor-iteration / transaction-style
 // blocks where the per-method wrapper above isn't enough. Runs `fn` once;
 // on MongoTopologyClosedError, reconnects and runs `fn` exactly once more.
@@ -273,4 +281,4 @@ const newId = () => uuidv4();
    // Add getBucket to module.exports
    ═══ END FUTURE FEATURE ═══ */
 
-module.exports = { col, transaction, connect, close, ensureConnected, withRetry, mapId, mapIds, newId };
+module.exports = { col, getDb, transaction, connect, close, ensureConnected, withRetry, mapId, mapIds, newId };

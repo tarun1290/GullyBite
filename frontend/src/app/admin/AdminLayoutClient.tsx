@@ -23,6 +23,7 @@ const NAV_ITEMS: NavItem[] = [
   { label: 'Directory',     icon: '📖', path: '/admin/directory' },
   { label: 'Orders',        icon: '📦', path: '/admin/orders' },
   { label: 'Customers',     icon: '👥', path: '/admin/customers' },
+  { label: 'Personas',      icon: '👤', path: '/admin/personas' },
   { label: 'Issues',        icon: '🚨', path: '/admin/issues' },
   { label: 'Delivery Disputes', icon: '⚠️', path: '/admin/delivery-disputes' },
   { label: 'Referrals',     icon: '🎯', path: '/admin/referrals' },
@@ -53,6 +54,7 @@ const NAV_ITEMS: NavItem[] = [
 // allowlist.
 const CITY_OPS_PATHS: ReadonlySet<string> = new Set<string>([
   '/admin/cities',
+  '/admin/personas',
 ]);
 
 // Sales nav — read-only access to captain analytics + the restaurant

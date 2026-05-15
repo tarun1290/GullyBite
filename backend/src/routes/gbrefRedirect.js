@@ -42,6 +42,23 @@ router.get('/:code', async (req, res) => {
     if (!phone) return res.redirect(302, fallbackUrl());
     // Click count bump — fire-and-forget; never block the redirect.
     col('referral_links').updateOne({ _id: link._id }, { $inc: { click_count: 1 } }).catch(() => {});
+    // Stamp tapped_at / clicked on the originating marketing_messages
+    // row so persona / engagement_score can detect real taps (vs the
+    // legacy status==='read' proxy). Fire-and-forget; never block the
+    // redirect. Wrapped in try/catch so even a sync throw from the
+    // proxy/wrapper can't bubble out and break the response.
+    if (link.marketing_message_id) {
+      try {
+        col('marketing_messages').updateOne(
+          { _id: link.marketing_message_id },
+          { $set: { tapped_at: new Date(), clicked: true } },
+        ).catch((err) => {
+          log.warn({ err: err.message, code }, 'tapped_at update failed (swallowed)');
+        });
+      } catch (err) {
+        log.warn({ err: err.message, code }, 'tapped_at dispatch threw (swallowed)');
+      }
+    }
     const url = `https://wa.me/${phone}?text=${encodeURIComponent('Hi! GBREF-' + code)}`;
     return res.redirect(302, url);
   } catch (err) {

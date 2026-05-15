@@ -52,6 +52,14 @@ const INDEXES = [
 
   // captain_inbound_logs — TTL: 30 days
   { coll: 'captain_inbound_logs', spec: { ts: 1 }, opts: { expireAfterSeconds: 2592000 }, label: 'captain_inbound_logs: ts TTL 30d' },
+
+  // customer_personas
+  { coll: 'customer_personas', spec: { customer_id: 1 }, opts: { unique: true }, label: 'customer_personas: customer_id unique' },
+  { coll: 'customer_personas', spec: { primary_city_id: 1, last_active_at: -1 }, opts: {}, label: 'customer_personas: city+last_active_at desc' },
+  { coll: 'customer_personas', spec: { primary_city_id: 1, discovery_stage: 1 }, opts: {}, label: 'customer_personas: city+discovery_stage' },
+  { coll: 'customer_personas', spec: { primary_city_id: 1, order_frequency: 1 }, opts: {}, label: 'customer_personas: city+order_frequency' },
+  { coll: 'customer_personas', spec: { price_sensitivity: 1, veg_strictness: 1 }, opts: {}, label: 'customer_personas: price+veg' },
+  { coll: 'customer_personas', spec: { last_active_at: -1 }, opts: {}, label: 'customer_personas: last_active_at desc' },
 ];
 
 async function main() {
