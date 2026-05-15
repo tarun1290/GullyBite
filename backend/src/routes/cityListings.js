@@ -676,6 +676,7 @@ const PATCH_ALLOWED = new Set([
   'address',
   'area',
   'delivery_zones',
+  'offers',
   'fulfillment_mode',
   'status',
   'linked_restaurant_id',
@@ -703,6 +704,36 @@ router.patch(
         if (!Array.isArray(city.areas) || !city.areas.includes($set.area)) {
           return res.status(400).json({ error: 'area must be one of the city\'s configured areas' });
         }
+      }
+
+      // offers — short customer-facing promotional blurbs surfaced via the
+      // captain. Validated as a string[] with strict caps so a misbehaving
+      // client can't pollute the doc: max 5 entries, each trimmed and
+      // ≤ 80 chars. Empty array clears prior offers; null/missing leaves
+      // the field untouched (validatePatchFields already drops missing keys).
+      if (Object.prototype.hasOwnProperty.call($set, 'offers')) {
+        const raw = $set.offers;
+        if (!Array.isArray(raw)) {
+          return res.status(400).json({ error: 'offers must be an array of strings' });
+        }
+        if (raw.length > 5) {
+          return res.status(400).json({ error: 'offers may have at most 5 entries' });
+        }
+        const cleaned = [];
+        for (const entry of raw) {
+          if (typeof entry !== 'string') {
+            return res.status(400).json({ error: 'each offer must be a string' });
+          }
+          const trimmed = entry.trim();
+          if (trimmed.length === 0) {
+            return res.status(400).json({ error: 'offers may not contain empty strings' });
+          }
+          if (trimmed.length > 80) {
+            return res.status(400).json({ error: 'each offer must be at most 80 characters' });
+          }
+          cleaned.push(trimmed);
+        }
+        $set.offers = cleaned;
       }
 
       $set.updated_at = new Date();

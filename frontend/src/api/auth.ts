@@ -32,6 +32,11 @@ export async function googleAuth(code: string): Promise<AuthResponse> {
   return data;
 }
 
+export async function manualLogin(email: string, password: string): Promise<AuthResponse> {
+  const { data } = await client.post<AuthResponse>('/auth/manual-login', { email, password });
+  return data;
+}
+
 export async function changePassword(payload: RequestBody): Promise<unknown> {
   const { data } = await client.post('/auth/change-password', payload);
   return data;

@@ -154,6 +154,16 @@ export default function AdminCityListingDetailPage() {
   const [researching, setResearching] = useState<boolean>(false);
   const [publishOk, setPublishOk] = useState<boolean>(false);
 
+  // ── Offers chip input state (Panel 1) ─────────────────────────────
+  // Caps mirror the backend validator (PATCH /:slug/listings/:id):
+  // max 5 entries, each trimmed and ≤ 80 chars. Seeded from
+  // listing.offers on load.
+  const OFFERS_MAX = 5;
+  const OFFER_MAX_LEN = 80;
+  const [offers, setOffers] = useState<string[]>([]);
+  const [offerInput, setOfferInput] = useState<string>('');
+  const [savingOffers, setSavingOffers] = useState<boolean>(false);
+
   // ── Performance analytics state ──────────────────────────────────
   // 7-day action counts + funnel percentages + 14-day daily time
   // series, fetched independently from loadAll() so a slow analytics
@@ -192,6 +202,7 @@ export default function AdminCityListingDetailPage() {
       if (newest) setSelectedSnapshotId((prev) => prev || newest._id);
       setTaxonomy(taxRes);
       setEditedTags(seedTagsFromListing(listingRes));
+      setOffers(Array.isArray(listingRes?.offers) ? listingRes.offers : []);
     } catch (e: unknown) {
       const er = e as { response?: { data?: { error?: string } }; message?: string };
       setError(er?.response?.data?.error || er?.message || 'Failed to load listing');
@@ -257,6 +268,47 @@ export default function AdminCityListingDetailPage() {
       setResearching(false);
     }
   }, [slug, id, showToast, loadAll]);
+
+  // ── Offers chip helpers (Panel 1) ────────────────────────────────
+  // Trim before length-check and dedupe-check so " biryani " and
+  // "biryani" don't both land in the array. Reject empty/whitespace-only
+  // input silently — pressing Enter in an empty field is a no-op.
+  const offersLimitReached = offers.length >= OFFERS_MAX;
+  const addOffer = () => {
+    const trimmed = offerInput.trim();
+    if (!trimmed) return;
+    if (trimmed.length > OFFER_MAX_LEN) return;
+    if (offers.length >= OFFERS_MAX) return;
+    if (offers.includes(trimmed)) {
+      setOfferInput('');
+      return;
+    }
+    setOffers((prev) => [...prev, trimmed]);
+    setOfferInput('');
+  };
+  const removeOffer = (val: string) => {
+    setOffers((prev) => prev.filter((o) => o !== val));
+  };
+
+  const onSaveOffers = useCallback(async () => {
+    if (!slug || !id) return;
+    setSavingOffers(true);
+    try {
+      await client.patch(
+        `/api/admin/cities/${encodeURIComponent(slug)}/listings/${encodeURIComponent(id)}`,
+        { offers },
+      );
+      showToast('Offers saved', 'success');
+      const fresh = await getCityListingDetail(slug, id);
+      setListing(fresh);
+      setOffers(Array.isArray(fresh?.offers) ? fresh.offers : []);
+    } catch (e: unknown) {
+      const er = e as { response?: { data?: { error?: string } }; message?: string };
+      showToast(er?.response?.data?.error || er?.message || 'Failed to save offers', 'error');
+    } finally {
+      setSavingOffers(false);
+    }
+  }, [slug, id, offers, showToast]);
 
   // ── Tag editing helpers ──────────────────────────────────────────
   const toggleArrayTag = (key: keyof EditedTags, value: string, max?: number) => {
@@ -504,7 +556,61 @@ export default function AdminCityListingDetailPage() {
                 </div>
               );
             })()}
+            {/* Offers — chip/tag input. Short promo blurbs surfaced to
+                customers via the captain. Backend caps: max 5, ≤ 80 chars. */}
             <div>
+              <div className="lbl">Offers</div>
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  className="inp"
+                  value={offerInput}
+                  maxLength={OFFER_MAX_LEN}
+                  placeholder={offersLimitReached ? `Max ${OFFERS_MAX} offers reached` : 'e.g. 20% off on weekdays'}
+                  disabled={offersLimitReached}
+                  onChange={(e) => setOfferInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      addOffer();
+                    }
+                  }}
+                />
+                <button
+                  type="button"
+                  className="btn-g btn-sm"
+                  onClick={addOffer}
+                  disabled={offersLimitReached || !offerInput.trim()}
+                >+ Add</button>
+              </div>
+              <div className="text-xs text-dim mt-1">
+                Short offer descriptions shown to customers via captain. Example: 20% off on weekdays
+              </div>
+              {offers.length > 0 && (
+                <div className="flex flex-wrap gap-2 mt-2">
+                  {offers.map((o) => (
+                    <span key={o} className="chip on flex items-center gap-1">
+                      {o}
+                      <button
+                        type="button"
+                        className="text-xs ml-1"
+                        onClick={() => removeOffer(o)}
+                        aria-label={`Remove ${o}`}
+                      >×</button>
+                    </span>
+                  ))}
+                </div>
+              )}
+              <div className="text-xs text-dim mt-1">{offers.length}/{OFFERS_MAX}</div>
+            </div>
+
+            <div className="flex items-center gap-2 flex-wrap border-t border-rim pt-3">
+              <button
+                type="button"
+                className="btn-g btn-sm"
+                onClick={onSaveOffers}
+                disabled={savingOffers}
+              >{savingOffers ? 'Saving…' : 'Save'}</button>
               <button
                 type="button"
                 className="btn-g btn-sm"

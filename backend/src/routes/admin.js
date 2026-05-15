@@ -33,6 +33,14 @@ const { rateLimitFn } = require('../middleware/rateLimit');
 // Legacy compatibility: simple requireAdmin still works for existing route-level guards
 const requireAdmin = requireAdminAuth();
 
+// ─── CAPTAIN PERSONA (platform_settings._id='captain_persona') ───
+// Single-doc system prompt template for the City Captain LLM. The
+// {city_name} placeholder is substituted at runtime by captainHandler.
+// Cached in Redis under `captain:persona` with a 5-minute TTL; the
+// PATCH handler below invalidates that key on every successful write.
+const DEFAULT_CAPTAIN_PERSONA = 'You are the GullyBite City Captain for {city_name} — a knowledgeable local food guide. You help customers with restaurant recommendations, dining suggestions for occasions such as date nights, family meals and business lunches, food and cuisine knowledge, local food culture and specialties, and food offers and discounts available in the city. You have access to GullyBite restaurant listings below. Always recommend from these listings when relevant and include the listing_id. For general food knowledge questions answer directly and set listing_id to null. For anything unrelated to food, dining, or restaurants respond only with: REDIRECT.';
+const CAPTAIN_PERSONA_MAX_LEN = 8000;
+
 // Admin login limiter: 10 attempts per 15 min per IP.
 const adminLoginLimiter = rateLimitFn(
   (r) => `admin_auth:${r.ip || r.headers['x-forwarded-for'] || 'unknown'}`,
@@ -293,6 +301,82 @@ router.get('/taxonomy', ...requireRole(['super_admin', 'city_ops']), async (req,
     return res.json(doc);
   } catch (e) {
     log.error({ err: e }, 'GET /api/admin/taxonomy failed');
+    return res.status(500).json({ success: false, message: 'Internal server error' });
+  }
+});
+
+// ─── CAPTAIN PERSONA (read + write platform_settings._id='captain_persona') ──
+// Read returns the stored template or the DEFAULT_CAPTAIN_PERSONA fallback,
+// preserving the {city_name} placeholder so the editor surface and the
+// runtime substitution path agree on the raw form. Gated to super_admin —
+// the persona drives every captain LLM call platform-wide.
+router.get('/captain-persona', ...requireRole(['super_admin']), async (req, res) => {
+  try {
+    const doc = await col('platform_settings').findOne({ _id: 'captain_persona' });
+    const persona = typeof doc?.value === 'string' && doc.value.length > 0
+      ? doc.value
+      : DEFAULT_CAPTAIN_PERSONA;
+    return res.json({ persona });
+  } catch (err) {
+    log.error({ err }, 'GET /api/admin/captain-persona failed');
+    return res.status(500).json({ success: false, message: 'Internal server error' });
+  }
+});
+
+// PATCH upserts the template and deletes `captain:persona` from Redis so
+// the next captain invocation pulls the fresh value (the cache miss path
+// in captainHandler.getCaptainPersona reseeds with a 5-minute TTL).
+router.patch('/captain-persona', ...requireRole(['super_admin']), express.json(), async (req, res) => {
+  try {
+    const raw = req.body?.persona;
+    if (typeof raw !== 'string') {
+      return res.status(400).json({ error: 'persona must be a string' });
+    }
+    const trimmed = raw.trim();
+    if (trimmed.length === 0) {
+      return res.status(400).json({ error: 'persona must not be empty' });
+    }
+    if (trimmed.length > CAPTAIN_PERSONA_MAX_LEN) {
+      return res.status(400).json({ error: `persona exceeds ${CAPTAIN_PERSONA_MAX_LEN} character limit` });
+    }
+
+    const now = new Date();
+    const updatedBy = req.adminUser?.email || req.adminUser?.name || 'admin';
+    await col('platform_settings').updateOne(
+      { _id: 'captain_persona' },
+      {
+        $set: { value: trimmed, updated_at: now, updated_by: updatedBy },
+        $setOnInsert: { _id: 'captain_persona', created_at: now },
+      },
+      { upsert: true },
+    );
+
+    // Best-effort cache invalidation. If Redis is unreachable the
+    // template still propagates within 5 minutes via the TTL, so we
+    // swallow errors rather than 500-ing on a successful upsert.
+    try {
+      const redisClient = require('../queue/redis');
+      await redisClient.del('captain:persona');
+    } catch (cacheErr) {
+      log.warn({ err: cacheErr?.message }, 'redis del captain:persona failed (swallowed)');
+    }
+
+    logActivity({
+      actorType: 'admin',
+      actorId: String(req.adminUser?._id),
+      actorName: req.adminUser?.name || req.adminUser?.email,
+      action: 'admin.captain_persona_updated',
+      category: 'platform',
+      description: 'Captain persona template updated',
+      resourceType: 'platform_settings',
+      resourceId: 'captain_persona',
+      severity: 'info',
+      metadata: { length: trimmed.length },
+    });
+
+    return res.json({ persona: trimmed });
+  } catch (err) {
+    log.error({ err }, 'PATCH /api/admin/captain-persona failed');
     return res.status(500).json({ success: false, message: 'Internal server error' });
   }
 });

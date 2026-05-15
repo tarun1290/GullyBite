@@ -15,6 +15,32 @@ const cheerio = require('cheerio');
 const robotsParser = require('robots-parser');
 const { newId } = require('../config/database');
 const log = require('../utils/logger').child({ component: 'menuResearchAgent' });
+const { callLLM, isLLMConfigured, LLMNotConfiguredError } = require('./llmClient');
+const { validateAndSplitTags, computePriceBand } = require('./menuTagger');
+
+// Auto-publish confidence threshold. Snapshots scoring at or above this
+// across all populated tag fields skip human review.
+const AUTO_PUBLISH_THRESHOLD = 0.75;
+
+// Strip ```json ... ``` or ``` ... ``` fences that some models wrap
+// JSON in despite jsonMode. Returns the original string if no fence
+// is found.
+function _stripJsonFences(raw) {
+  if (typeof raw !== 'string') return raw;
+  const trimmed = raw.trim();
+  const fenced = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
+  if (fenced) return fenced[1].trim();
+  return trimmed;
+}
+
+// Average the per-field confidence numbers the LLM returned. Defensive
+// against missing/non-numeric values — returns 0 if nothing usable.
+function _avgConfidence(confidence_scores) {
+  if (!confidence_scores || typeof confidence_scores !== 'object') return 0;
+  const nums = Object.values(confidence_scores).filter((v) => typeof v === 'number' && isFinite(v));
+  if (nums.length === 0) return 0;
+  return nums.reduce((a, b) => a + b, 0) / nums.length;
+}
 
 // ─── CONSTANTS ──────────────────────────────────────────────────────
 const BLOCK_DOMAINS = [
@@ -239,13 +265,127 @@ async function runResearchJob(db, redisClient, listingId) {
       return;
     }
 
-    // STEP 7 — placeholder for structured extraction.
-    // LLM_HOOK: structured tag extraction would call out to the LLM here,
-    // passing `sources` + `taxonomy` and receiving back `tags` +
-    // `confidence_scores`. Until then, store raw_extracted_texts and mark
-    // the snapshot needs_review so a human (or future extraction job) can finish.
-    const tags = null;
-    const confidence_scores = null;
+    // STEP 7 — structured tag extraction via LLM.
+    // When CAPTAIN_LLM_PROVIDER is configured, ask the model to extract
+    // structured menu items + classification from the scraped text. On
+    // any failure (not configured, parse error, network, etc.) we fall
+    // through to the existing `needs_review` path below — the job never
+    // crashes on LLM trouble.
+    let tags = null;
+    let confidence_scores = null;
+    let median_price_rs = null;
+    let extracted_items = null;
+    let unknown_tags = null;
+    let snapshotStatus = 'needs_review';
+    let isLive = false;
+    let listingResearchStatus = 'needs_review';
+
+    if (isLLMConfigured()) {
+      try {
+        const raw_extracted_texts = sources; // [{ url, text }]
+        const cityNameForPrompt = cityName || '';
+        const restaurantName = listing.name || '';
+
+        // Cap concatenated content to keep token usage bounded; the
+        // per-source extractor already caps each text at 4000 chars.
+        const MAX_CONTENT_CHARS = 12000;
+        let combinedContent = raw_extracted_texts
+          .map((s, i) => `--- SOURCE ${i + 1} (${s.url}) ---\n${s.text}`)
+          .join('\n\n');
+        if (combinedContent.length > MAX_CONTENT_CHARS) {
+          combinedContent = combinedContent.slice(0, MAX_CONTENT_CHARS);
+        }
+
+        const systemPrompt = 'You are a restaurant menu extraction specialist. Extract structured menu items and classify the restaurant from the provided web content. Respond ONLY with valid JSON. No markdown, no preamble.';
+
+        const userPrompt = [
+          `Restaurant: ${restaurantName}`,
+          `City: ${cityNameForPrompt}`,
+          '',
+          'Taxonomy (use ONLY these values for tag fields where applicable):',
+          JSON.stringify(taxonomy || {}, null, 2),
+          '',
+          'Web content extracted from candidate sources:',
+          combinedContent,
+          '',
+          'Return a JSON object with this exact shape:',
+          '{',
+          '  "tags": {',
+          '    "cuisine_primary": [string],',
+          '    "vibe_tags": [string],',
+          '    "meal_contexts": [string],',
+          '    "service_modes": [string],',
+          '    "dietary_flags": [string],',
+          '    "price_band": "budget"|"mid"|"premium"|"luxury",',
+          '    "veg_status": "veg"|"non-veg"|"eggetarian"',
+          '  },',
+          '  "items": [{ "name": string, "price_rs": number }],',
+          '  "median_price_rs": number,',
+          '  "confidence_scores": { "<tag_field>": number between 0 and 1 }',
+          '}',
+        ].join('\n');
+
+        const rawResponse = await callLLM(systemPrompt, userPrompt, { jsonMode: true });
+        const cleaned = _stripJsonFences(rawResponse);
+        const parsed = JSON.parse(cleaned);
+
+        // Validate + split against the canonical taxonomy.
+        const incomingTags = parsed?.tags || {};
+        const { validTags, unknownTags } = validateAndSplitTags(incomingTags, taxonomy || {});
+
+        // Compute price band from median (only if model didn't provide
+        // a valid one). computePriceBand returns null for bad input.
+        const modelMedian = (typeof parsed?.median_price_rs === 'number') ? parsed.median_price_rs : null;
+        median_price_rs = modelMedian;
+        if (!validTags.price_band) {
+          const computed = computePriceBand(modelMedian);
+          if (computed) validTags.price_band = computed;
+        }
+
+        tags = validTags;
+        confidence_scores = (parsed && typeof parsed.confidence_scores === 'object') ? parsed.confidence_scores : null;
+        extracted_items = Array.isArray(parsed?.items) ? parsed.items : null;
+        unknown_tags = (unknownTags && Object.keys(unknownTags).length > 0) ? unknownTags : null;
+
+        // Auto-publish threshold: average confidence across populated
+        // fields must clear the bar. Otherwise still surface to a human.
+        const avgConf = _avgConfidence(confidence_scores);
+        if (avgConf >= AUTO_PUBLISH_THRESHOLD && (!unknown_tags)) {
+          snapshotStatus = 'auto_published';
+          isLive = true;
+          listingResearchStatus = 'complete';
+        } else {
+          snapshotStatus = 'needs_review';
+          isLive = false;
+          listingResearchStatus = 'needs_review';
+        }
+
+        log.info(
+          { listingId, avgConf, hasUnknownTags: !!unknown_tags, snapshotStatus },
+          'llm extraction succeeded',
+        );
+      } catch (err) {
+        if (err instanceof LLMNotConfiguredError) {
+          // Defensive — shouldn't reach this branch because of the guard above.
+          log.warn({ listingId, err: err.message }, 'llm not configured during extraction (unexpected)');
+        } else if (err instanceof SyntaxError) {
+          log.warn({ listingId, err: err.message }, 'llm json parse failed — falling back to needs_review');
+        } else {
+          log.warn({ listingId, err: err.message }, 'llm extraction failed — falling back to needs_review');
+        }
+        // Reset to safe fallback values.
+        tags = null;
+        confidence_scores = null;
+        median_price_rs = null;
+        extracted_items = null;
+        unknown_tags = null;
+        snapshotStatus = 'needs_review';
+        isLive = false;
+        listingResearchStatus = 'needs_review';
+      }
+    } else {
+      log.info({ listingId }, 'llm not configured — snapshot will be marked needs_review');
+    }
 
     // STEP 8 — insert menu_snapshot.
     const snapshotId = newId();
@@ -258,19 +398,32 @@ async function runResearchJob(db, redisClient, listingId) {
       raw_extracted_texts: sources, // each { url, text }
       tags,
       confidence_scores,
-      status: 'needs_review',
-      is_live: false,
+      extracted_items,
+      median_price_rs,
+      unknown_tags,
+      status: snapshotStatus,
+      is_live: isLive,
       created_at: new Date(),
       schema_version: 1,
     });
 
-    // STEP 9 — update listing.
+    // STEP 9 — update listing. When we auto-publish, also copy tags
+    // onto the listing so the discovery queries (which read
+    // city_listings.tags.*) immediately reflect the new data.
+    const listingUpdate = {
+      research_status: listingResearchStatus,
+      last_researched_at: new Date(),
+      latest_snapshot_id: snapshotId,
+    };
+    if (snapshotStatus === 'auto_published' && tags) {
+      listingUpdate.tags = tags;
+    }
     await db.collection('city_listings').updateOne(
       { _id: listingId },
-      { $set: { research_status: 'needs_review', last_researched_at: new Date(), latest_snapshot_id: snapshotId } },
+      { $set: listingUpdate },
     );
 
-    log.info({ listingId, snapshotId, sourceCount: sources.length }, 'research job complete');
+    log.info({ listingId, snapshotId, sourceCount: sources.length, snapshotStatus }, 'research job complete');
   } catch (err) {
     // Rethrow so BullMQ can apply its retry policy.
     log.error({ listingId, err: err.message, stack: err.stack }, 'research job failed');

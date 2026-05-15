@@ -6,11 +6,13 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import client from '../../../../lib/apiClient';
 import { useToast } from '../../../../components/Toast';
 import {
+  getCaptainPersona,
   getCityAnalytics,
   getCityDetail,
   getCityInterestLeaderboard,
   getCityListings,
   refreshCityWabaStatus,
+  updateCaptainPersona,
 } from '../../../../api/admin';
 import type {
   CityAnalytics,
@@ -106,6 +108,18 @@ export default function AdminCityDetailPage() {
   const [leaderboardLoading, setLeaderboardLoading] = useState<boolean>(true);
   const [leaderboardErr, setLeaderboardErr] = useState<string | null>(null);
 
+  // ── Captain persona editor ──────────────────────────────────────
+  // Collapsed by default; the GET request is deferred until the user
+  // first expands the section, so cities that never touch the persona
+  // pay zero network cost on page load. Template is stored unsubstituted
+  // (contains the raw {city_name} placeholder).
+  const [personaOpen, setPersonaOpen] = useState<boolean>(false);
+  const [personaLoaded, setPersonaLoaded] = useState<boolean>(false);
+  const [personaLoading, setPersonaLoading] = useState<boolean>(false);
+  const [personaSaving, setPersonaSaving] = useState<boolean>(false);
+  const [personaValue, setPersonaValue] = useState<string>('');
+  const [personaErr, setPersonaErr] = useState<string | null>(null);
+
   const load = useCallback(async () => {
     if (!slug) return;
     setState((p) => ({ ...p, loading: true, err: null }));
@@ -186,6 +200,49 @@ export default function AdminCityDetailPage() {
       setRefreshingWaba(false);
     }
   }, [slug, showToast]);
+
+  // Toggle the persona editor. On the first expand we fetch the
+  // template; subsequent expands reuse the cached value in component
+  // state. Errors surface via the personaErr banner inside the panel
+  // rather than a toast — the editor is still usable with the default
+  // copy if the GET fails.
+  const onTogglePersona = useCallback(async () => {
+    const next = !personaOpen;
+    setPersonaOpen(next);
+    if (!next || personaLoaded || personaLoading) return;
+    setPersonaLoading(true);
+    setPersonaErr(null);
+    try {
+      const res = await getCaptainPersona();
+      setPersonaValue(res.persona ?? '');
+      setPersonaLoaded(true);
+    } catch (err: unknown) {
+      const e = err as { response?: { data?: { error?: string } }; message?: string };
+      setPersonaErr(e?.response?.data?.error || e?.message || 'Failed to load persona');
+    } finally {
+      setPersonaLoading(false);
+    }
+  }, [personaOpen, personaLoaded, personaLoading]);
+
+  const onSavePersona = useCallback(async () => {
+    if (personaSaving) return;
+    const trimmed = personaValue.trim();
+    if (trimmed.length === 0) {
+      showToast('Persona cannot be empty', 'error');
+      return;
+    }
+    setPersonaSaving(true);
+    try {
+      const res = await updateCaptainPersona(personaValue);
+      setPersonaValue(res.persona ?? personaValue);
+      showToast('Captain persona saved', 'success');
+    } catch (err: unknown) {
+      const e = err as { response?: { data?: { error?: string } }; message?: string };
+      showToast(e?.response?.data?.error || e?.message || 'Failed to save persona', 'error');
+    } finally {
+      setPersonaSaving(false);
+    }
+  }, [personaValue, personaSaving, showToast]);
 
   const onResearchAll = useCallback(async () => {
     if (!slug) return;
@@ -457,6 +514,54 @@ export default function AdminCityDetailPage() {
                 className="btn-g"
               >View Listings</Link>
             </div>
+          </div>
+
+          {/* Captain persona — collapsible LLM system prompt editor.
+              Single platform-wide template; the {city_name} placeholder
+              is substituted at runtime by captainHandler. Mutations
+              invalidate the `captain:persona` Redis cache server-side. */}
+          <div className="card">
+            <button
+              type="button"
+              className="ch w-full text-left gap-2.5 flex-wrap"
+              onClick={onTogglePersona}
+              aria-expanded={personaOpen}
+            >
+              <span className="text-dim text-sm" aria-hidden="true">{personaOpen ? '▾' : '▸'}</span>
+              <h3>Captain Persona</h3>
+              {personaLoading && <span className="text-dim text-xs ml-2">Loading…</span>}
+            </button>
+            {personaOpen && (
+              <div className="cb space-y-3">
+                {personaErr ? (
+                  <div className="notice warn">
+                    <div className="notice-ico">⚠️</div>
+                    <div className="notice-body">
+                      <p>{personaErr}</p>
+                    </div>
+                  </div>
+                ) : null}
+                <textarea
+                  className="w-full font-mono text-xs border border-rim rounded p-2 bg-transparent"
+                  rows={8}
+                  value={personaValue}
+                  onChange={(e) => setPersonaValue(e.target.value)}
+                  disabled={personaLoading || personaSaving}
+                  spellCheck={false}
+                />
+                <div className="text-xs text-dim">
+                  Use {'{city_name}'} as a placeholder — it is replaced with the actual city name at runtime.
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    className="btn-g btn-sm"
+                    onClick={onSavePersona}
+                    disabled={personaLoading || personaSaving}
+                  >{personaSaving ? 'Saving…' : 'Save'}</button>
+                </div>
+              </div>
+            )}
           </div>
         </>
       )}

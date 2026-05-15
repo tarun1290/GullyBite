@@ -398,6 +398,69 @@ router.post('/google', express.json(), async (req, res) => {
   }
 });
 
+// ─── MANUAL LOGIN (DEMO ACCOUNT) ─────────────────────────────
+// Isolated email+password login gated on a per-restaurant opt-in flag.
+// Only restaurants with { manual_login_enabled: true } can authenticate
+// via this route; the match is on manual_login_email (case-insensitive)
+// rather than the primary email so the demo identity is separable from
+// the restaurant's own account email. Designed for showcasing the
+// dashboard with a fixed demo credential without exposing the regular
+// /signin or /google flows to that credential. See
+// backend/scripts/set-demo-login.js for the one-time setup.
+router.post('/manual-login', express.json(), async (req, res) => {
+  try {
+    const { email, password } = req.body || {};
+    if (!email || !password) {
+      return res.status(400).json({ error: 'Email and password are required' });
+    }
+
+    const restaurant = await col('restaurants').findOne({
+      manual_login_enabled: true,
+      manual_login_email: { $regex: `^${String(email).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, $options: 'i' },
+    });
+    if (!restaurant || !restaurant.password_hash) {
+      return res.status(401).json({ error: 'Invalid credentials' });
+    }
+
+    const valid = await bcrypt.compare(password, restaurant.password_hash);
+    if (!valid) {
+      return res.status(401).json({ error: 'Invalid credentials' });
+    }
+
+    const restaurantId = String(restaurant._id);
+    const ownerUser = await ensureOwnerUser(restaurantId, restaurant.owner_name);
+    const token = jwt.sign({
+      restaurantId,
+      userId: String(ownerUser._id),
+      role: 'owner',
+      permissions: ROLE_PERMISSIONS.owner,
+      branchIds: [],
+      token_version: ownerUser.token_version ?? 0,
+    }, process.env.JWT_SECRET, { expiresIn: '7d' });
+
+    const approvalStatus  = restaurant.approval_status || 'pending';
+    const needsOnboarding = (restaurant.onboarding_step || 1) < 2;
+
+    req.log.info({ restaurantId }, 'Manual login success');
+    return res.json({
+      token,
+      approvalStatus,
+      needsOnboarding,
+      onboardingStep: restaurant.onboarding_step || 1,
+      user: {
+        id: String(ownerUser._id),
+        name: ownerUser.name,
+        role: 'restaurant',
+        staff_role: 'owner',
+        permissions: ROLE_PERMISSIONS.owner,
+      },
+    });
+  } catch (err) {
+    req.log.error({ err }, 'Manual login failed');
+    return res.status(500).json({ error: 'Login failed' });
+  }
+});
+
 // ─── GOOGLE OAUTH REDIRECT CALLBACK ──────────────────────────
 // Google redirects here after user consents (redirect mode)
 router.get('/google/callback', async (req, res) => {

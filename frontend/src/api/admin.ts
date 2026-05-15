@@ -1230,3 +1230,19 @@ export async function getListingAnalytics(slug: string, listingId: string, days?
   const { data } = await client.get<ListingAnalytics>(`/api/admin/cities/${encodeURIComponent(slug)}/listings/${encodeURIComponent(listingId)}/analytics`, { params });
   return data;
 }
+
+// ── Captain persona (super_admin only) ─────────────────────────────
+// Single platform-wide LLM system prompt template. Backend stores the
+// raw template (with the {city_name} placeholder) in
+// platform_settings._id='captain_persona' and substitutes the actual
+// city name at runtime.
+
+export async function getCaptainPersona(): Promise<{ persona: string }> {
+  const { data } = await client.get<{ persona: string }>('/api/admin/captain-persona');
+  return data;
+}
+
+export async function updateCaptainPersona(persona: string): Promise<{ persona: string }> {
+  const { data } = await client.patch<{ persona: string }>('/api/admin/captain-persona', { persona });
+  return data;
+}

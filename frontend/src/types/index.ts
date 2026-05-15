@@ -126,6 +126,10 @@ export interface CityListing {
   website_url?: string | null;
   phone_number?: string | null;
   delivery_zones?: string[];
+  // Short, customer-facing promotional blurbs surfaced via the captain
+  // (e.g. "20% off on weekdays"). Capped at 5 entries × 80 chars by the
+  // PATCH validator. Optional because legacy docs may not have it.
+  offers?: string[];
   tags: Record<string, unknown> | null;
   latest_snapshot_id: string | null;
   last_researched_at: string | null;
