@@ -49,6 +49,34 @@ function _hasCredentials(integration) {
   );
 }
 
+// ── Petpooja /save_order tax helpers ─────────────────────────
+// Approximate Indian restaurant GST. subtotal_rs is pre-tax;
+// delivery + packing are treated as tax-exempt here.
+function computeTax(order) {
+  // 5% GST on (subtotal − discount)
+  const taxable = (order.subtotal_rs || 0) - (order.discount_rs || 0);
+  return Math.max(0, taxable * 0.05).toFixed(2);
+}
+
+function buildItemTax(price, qty) {
+  // 2.5% CGST + 2.5% SGST on item line total
+  const base = price * qty;
+  const each = parseFloat((base * 0.025).toFixed(2));
+  return [
+    { id: 'CGST', name: 'CGST', tax_percentage: '2.5', amount: String(each) },
+    { id: 'SGST', name: 'SGST', tax_percentage: '2.5', amount: String(each) },
+  ];
+}
+
+function buildOrderTax(order) {
+  const taxable = Math.max(0, (order.subtotal_rs || 0) - (order.discount_rs || 0));
+  const each = parseFloat((taxable * 0.025).toFixed(2));
+  return [
+    { id: 'CGST', title: 'CGST', type: 'P', price: '2.5%', tax: String(each), restaurant_liable_amt: String(each) },
+    { id: 'SGST', title: 'SGST', type: 'P', price: '2.5%', tax: String(each), restaurant_liable_amt: String(each) },
+  ];
+}
+
 async function pushOrderToPos(orderId) {
   try {
     const order = await col('orders').findOne({ _id: orderId });
@@ -96,12 +124,29 @@ async function pushOrderToPos(orderId) {
         log.warn({ orderId, itemId: localId, name: it.name }, 'pushOrderToPos: pos_item_id missing for line — falling back to name');
         posId = it.name || 'unknown';
       }
-      const priceRs = it.price_rs ?? (it.price_paise / 100);
+      const rawPrice = it.price_rs ?? (it.price_paise != null ? it.price_paise / 100 : null);
+      const itemPrice = (Number.isFinite(rawPrice) && rawPrice >= 0) ? rawPrice : 0;
+      const itemQty = it.quantity || 1;
+      const rawAddons = Array.isArray(it.addons)
+        ? it.addons
+        : (Array.isArray(it.addon_items) ? it.addon_items : []);
       return {
-        id: posId,
-        name: it.name,
-        price: priceRs,
-        quantity: it.quantity,
+        id            : posId,
+        name          : it.name,
+        price         : itemPrice.toFixed(2),
+        final_price   : itemPrice.toFixed(2),
+        quantity      : String(itemQty),
+        tax_inclusive : 'false',
+        gst_liability : 'restaurant',
+        variation_id  : it.variation_id || '',
+        variation_name: it.variation_name || it.size || '',
+        item_tax      : buildItemTax(itemPrice, itemQty),
+        addon_items   : rawAddons.map((ad) => ({
+          id      : ad.id || ad.addon_id || '',
+          name    : ad.name,
+          price   : (ad.price_rs || 0).toFixed(2),
+          quantity: String(ad.quantity || 1),
+        })),
       };
     });
 
@@ -109,6 +154,11 @@ async function pushOrderToPos(orderId) {
     const callbackUrl = callbackBase
       ? `${callbackBase.replace(/\/$/, '')}/webhooks/petpooja/callback`
       : '';
+
+    const createdAt = order.created_at instanceof Date
+      ? order.created_at
+      : new Date(order.created_at || Date.now());
+    const createdAtIso = createdAt.toISOString();
 
     const payload = {
       app_key      : integration.app_key,
@@ -121,21 +171,34 @@ async function pushOrderToPos(orderId) {
       address      : branch?.address || '',
       OrderInfo: {
         Customer: {
-          name : customer?.name || '',
-          phone: customer?.phone || '',
-          email: '',
+          name     : customer?.name || 'Customer',
+          phone    : customer?.phone || '',
+          email    : '',
+          address  : order.address_snapshot?.formatted_address || order.delivery_address || '',
+          latitude : order.address_snapshot?.latitude || '',
+          longitude: order.address_snapshot?.longitude || '',
         },
         Order: {
-          orderID  : order.order_number,
-          orderType: 'Delivery',
-          orderDate: order.created_at instanceof Date
-            ? order.created_at.toISOString()
-            : new Date(order.created_at || Date.now()).toISOString(),
-          totalCost: order.total_rs,
+          orderID          : order.order_number,
+          preorder_date    : createdAtIso.slice(0, 10),
+          preorder_time    : createdAtIso.slice(11, 19),
+          advanced_order   : 'N',
+          order_type       : 'H',
+          total            : (order.total_rs || 0).toFixed(2),
+          tax_total        : computeTax(order),
+          discount_total   : order.discount_rs ? order.discount_rs.toFixed(2) : '',
+          discount_type    : order.discount_rs ? 'F' : '',
+          description      : '',
+          created_on       : createdAtIso.replace('T', ' ').slice(0, 19),
+          dc_tax_percentage: '0',
+          pc_tax_percentage: '0',
+          payment_type     : 'ONLINE',
+          delivery_charges : (order.delivery_fee_rs || 0).toFixed(2),
+          enable_delivery  : '0',
+          callback_url     : callbackUrl,
         },
         OrderItem: orderItems,
-        Tax     : [],
-        Discount: [],
+        Tax      : buildOrderTax(order),
       },
     };
 
