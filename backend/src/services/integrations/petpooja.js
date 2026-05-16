@@ -198,8 +198,8 @@ function parsePushMenuPayload(payload) {
       catalog_sync_status  : 'pending',
     };
 
-    const variations = Array.isArray(item.variations) ? item.variations : [];
-    const hasVariants = item.itemallowvariation === '1' && variations.length > 1;
+    const variations = Array.isArray(item.variation) ? item.variation : [];
+    const hasVariants = item.itemallowvariation === '1' && variations.length >= 1;
 
     if (hasVariants) {
       const groupId = `PP-${item.itemid}`;
