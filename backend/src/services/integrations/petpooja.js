@@ -20,6 +20,7 @@ const FOOD_TYPE_MAP = {
   '2': 'Non-Veg',
   '3': 'Egg',
   '4': 'Vegan',
+  '24': 'Egg',
 };
 
 const slugify = require('../../utils/slugify');
@@ -171,8 +172,8 @@ function parsePushMenuPayload(payload) {
   let variantCount = 0;
 
   for (const item of rawItems) {
-    const foodTag = FOOD_TYPE_MAP[item.item_type] || 'Veg';
-    const category = catNameById[item.categoryid] || 'Menu';
+    const foodTag = FOOD_TYPE_MAP[item.item_attributeid] || FOOD_TYPE_MAP[item.item_type] || 'Veg';
+    const category = catNameById[item.item_categoryid] || 'Menu';
     const tags = [foodTag, category];
     if (item.bestseller === '1' || item.is_bestseller) tags.push('Bestseller');
     if (item.is_new === '1') tags.push('New');
@@ -181,7 +182,7 @@ function parsePushMenuPayload(payload) {
       name         : item.itemname,
       description  : item.item_description || '',
       image_url    : item.item_image_url || null,
-      is_available : item.item_active === '1',
+      is_available : item.active === '1' || item.item_active === '1',
       pos_item_id  : String(item.itemid),
       pos_platform : 'petpooja',
       food_type    : foodTag.toLowerCase().replace('-', '_'),
