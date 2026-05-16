@@ -1,424 +1,183 @@
 #!/usr/bin/env node
-'use strict';
-
 // scripts/test-paid-order.js
 //
-// Inserts a PAID order document directly into MongoDB and enqueues
-// the BullMQ acceptance-timeout job — bypassing the WhatsApp customer
-// flow and the Razorpay payment gateway. Used to validate the
-// post-payment pipeline end-to-end on EC2 without burning a real test
-// transaction.
+// CLI test harness: simulates a Razorpay payment success on a customer's
+// LATEST EXISTING order and enqueues the full post-payment job chain
+// (customer notification + POS sync + Petpooja push) through the durable
+// queue/postPaymentJobs queue — the SAME enqueue call razorpay.js makes
+// (see src/webhooks/razorpay.js:657).
 //
-// Usage:
-//   cd /home/ubuntu/GullyBite/backend
-//   node --env-file=/home/ubuntu/GullyBite/.env scripts/test-paid-order.js \
-//     --restaurant_id=<RID> --branch_id=<BID> [--customer_phone=919999999999]
+// It then polls the order doc for the Petpooja stamp so you can watch a
+// running worker pick the jobs up. This script ENQUEUES + OBSERVES only;
+// it does not run the worker loop (postPaymentJobs.start() lives in the
+// app process). If nothing is running start()'d, the jobs sit pending.
 //
-// What it does:
-//   • Verifies branch belongs to restaurant
-//   • Pulls 2 active menu_items for the branch (same $or pattern as mpmBuilder)
-//   • Inserts ONE order doc with status='PAID', payment_status='paid',
-//     fake razorpay_order_id / razorpay_payment_id
-//   • Enqueues the 'order-acceptance' BullMQ job via the production
-//     addAcceptanceTimeoutJob() helper — guarantees identical queue
-//     options (jobId, delay, attempts, removeOnComplete/Fail)
+// WRITES: flips the chosen order to status:'PAID' and enqueues real
+// queue jobs (incl. a live Petpooja push). Run deliberately, against a
+// disposable test order.
 //
-// What it does NOT do:
-//   • No order_items rows (the order doc carries items[] denormalized)
-//   • No WhatsApp messages, no Razorpay charge
-//
-// --customer_phone behaviour:
-//   • Omitted → synthetic customer_id (uuid), fake phone 919999999999.
-//     Notification path's findOne({_id: customer_id}) → null → silent
-//     no-op. Useful for pipeline smoke-tests with no live customer.
-//   • Provided → looks up the real customer by wa_phone (exact-match
-//     on normalized digits, with a substring-regex fallback for
-//     partial inputs like "9876543210" matching "+919876543210").
-//     Uses the real _id so resolveRecipient (services/customerIdentity)
-//     resolves to the real WhatsApp number — actual notifications WILL
-//     fire on this run. Hard-errors if no match (don't silently fall
-//     back to the synthetic id — that masks the most useful failure).
+// Local:  node backend/scripts/test-paid-order.js --restaurant_id <id> --branch_id <id> --customer_phone <phone>
+// EC2:    node --env-file=/home/ubuntu/GullyBite/.env backend/scripts/test-paid-order.js --restaurant_id <id> --branch_id <id> --customer_phone <phone>
 
-const path = require('path');
-const crypto = require('crypto');
-const { MongoClient } = require('mongodb');
-const { calculateOrderCharges } = require('../src/services/charges');
-const { getDeliveryQuote } = require('../src/services/delivery');
+'use strict';
 
+require('dotenv').config({ path: require('path').resolve(__dirname, '../../.env'), quiet: true });
+
+const { connect, col } = require('../src/config/database');
+
+// ─── ARG PARSING (process.argv, no minimist) ────────────────
+// Supports both `--key value` and `--key=value`.
 function parseArgs(argv) {
-  // null sentinel for customer_phone so we can distinguish "user didn't
-  // pass the flag" (use synthetic) from "user explicitly asked for a
-  // real lookup" (resolve or fail). Default-to-fake gets applied later.
-  const out = { restaurant_id: null, branch_id: null, customer_phone: null };
-  for (const raw of argv.slice(2)) {
-    const m = raw.match(/^--([a-z_]+)=(.+)$/);
-    if (!m) continue;
-    if (m[1] in out) out[m[1]] = m[2];
+  const out = {};
+  const rest = argv.slice(2);
+  for (let i = 0; i < rest.length; i++) {
+    const tok = rest[i];
+    if (!tok.startsWith('--')) continue;
+    const eq = tok.indexOf('=');
+    if (eq !== -1) {
+      out[tok.slice(2, eq)] = tok.slice(eq + 1);
+    } else {
+      const next = rest[i + 1];
+      if (next !== undefined && !next.startsWith('--')) {
+        out[tok.slice(2)] = next;
+        i++;
+      } else {
+        out[tok.slice(2)] = true;
+      }
+    }
   }
   return out;
 }
 
-// Strip non-digits — same shape as services/customer.service.js
-// normalizePhone (digit-only, null on empty). Inlined rather than
-// imported so the script stays standalone with zero project requires
-// before mongo connects.
-function normalizeDigits(s) {
-  if (!s) return null;
-  const d = String(s).replace(/[^\d]/g, '');
-  return d || null;
+function usage(msg) {
+  if (msg) console.error('\nERROR: ' + msg);
+  console.error(`
+Usage:
+  node backend/scripts/test-paid-order.js \\
+    --restaurant_id <restaurantId> \\
+    --branch_id <branchId> \\
+    --customer_phone <phone>
+
+  --restaurant_id   restaurants._id of the tenant
+  --branch_id       branches._id the order belongs to
+  --customer_phone  customer phone (any format; matched on trailing digits)
+
+Finds the customer's latest order for that branch+restaurant, marks it
+PAID, and enqueues the post-payment job chain (mirrors razorpay.js).
+`);
+  process.exit(1);
 }
 
-function maskPhone(p) {
-  const d = normalizeDigits(p) || '';
-  return d.length >= 4 ? `••••${d.slice(-4)}` : (p || '');
-}
-
+// ─── MAIN ───────────────────────────────────────────────────
 async function main() {
   const args = parseArgs(process.argv);
-  if (!args.restaurant_id || !args.branch_id) {
-    console.error('Usage: --restaurant_id=<id> --branch_id=<id> [--customer_phone=<phone>]');
+  const restaurantId = args.restaurant_id;
+  const branchId = args.branch_id;
+  const customerPhone = args.customer_phone;
+
+  if (!restaurantId || restaurantId === true) usage('--restaurant_id is required');
+  if (!branchId || branchId === true) usage('--branch_id is required');
+  if (!customerPhone || customerPhone === true) usage('--customer_phone is required');
+
+  await connect();
+
+  // ── Find customer by phone (regex on trailing digits) ──
+  const digits = String(customerPhone).replace(/\D/g, '');
+  if (!digits) usage('--customer_phone has no usable digits');
+  const phoneRegex = new RegExp(digits + '$');
+  const customer = await col('customers').findOne({ wa_phone: { $regex: phoneRegex } });
+  if (!customer) {
+    console.error(`No customer found with wa_phone matching trailing digits "${digits}"`);
     process.exit(1);
   }
-  if (!process.env.MONGODB_URI) {
-    console.error('MONGODB_URI not set — pass via --env-file');
+  console.log(`Customer: ${customer._id} (${customer.name || '—'}, wa_phone=${customer.wa_phone})`);
+
+  // ── Latest order for this customer + branch + restaurant ──
+  const order = await col('orders')
+    .find({
+      customer_id: String(customer._id),
+      branch_id: branchId,
+      restaurant_id: restaurantId,
+    })
+    .sort({ created_at: -1 })
+    .limit(1)
+    .next();
+
+  if (!order) {
+    console.error(`No order found for customer=${customer._id}, branch=${branchId}, restaurant=${restaurantId}`);
     process.exit(1);
   }
-  if (!process.env.REDIS_URL) {
-    console.error('REDIS_URL not set — pass via --env-file');
-    process.exit(1);
-  }
 
-  // ─── Mongo ───────────────────────────────────────────────────
-  const client = new MongoClient(process.env.MONGODB_URI);
-  await client.connect();
-  const db = client.db('gullybite');
-  console.log('[test-paid-order] mongo connected: gullybite');
+  const itemCount = Array.isArray(order.items) ? order.items.length : 0;
+  console.log('\n── ORDER SUMMARY ──');
+  console.log(`  _id:        ${order._id}`);
+  console.log(`  order_no:   ${order.order_number ?? '—'}`);
+  console.log(`  status:     ${order.status}`);
+  console.log(`  total_rs:   ${order.total_rs ?? '—'}`);
+  console.log(`  items:      ${itemCount}`);
+  console.log(`  created_at: ${order.created_at ? new Date(order.created_at).toISOString() : '—'}`);
 
-  // Verify branch + ownership
-  const branch = await db.collection('branches').findOne({ _id: args.branch_id });
-  if (!branch) {
-    console.error(`branch not found: ${args.branch_id}`);
-    await client.close();
-    process.exit(1);
-  }
-  if (String(branch.restaurant_id) !== String(args.restaurant_id)) {
-    console.error(`branch ${args.branch_id} does not belong to restaurant ${args.restaurant_id}`);
-    await client.close();
-    process.exit(1);
-  }
-  console.log(`[test-paid-order] branch resolved: ${branch.name} (${branch._id})`);
-
-  // ─── WABA resolution ─────────────────────────────────────────
-  // Real orders inserted by services/order.js carry phone_number_id +
-  // access_token sourced from the connected whatsapp_accounts row, so
-  // downstream notification handlers can call wa.sendText / sendTemplate
-  // without re-querying. Stamp the same fields here so the synthetic
-  // order behaves identically. Hard-fail when no row exists — without
-  // a connected WABA, every notification path silently no-ops, which
-  // hides the real configuration issue.
-  const waAccount = await db.collection('whatsapp_accounts').findOne({
-    restaurant_id: args.restaurant_id,
-  });
-  if (!waAccount) {
-    console.error('No connected WABA found for this restaurant — cannot send notifications.');
-    await client.close();
-    process.exit(1);
-  }
-  console.log(`[test-paid-order] waba: phone_number_id=${waAccount.phone_number_id}`);
-
-  // ─── Restaurant doc (for charges config) ─────────────────────
-  // Real orders pull menu_gst_mode / delivery_fee_customer_pct /
-  // packaging_* off the restaurants row in services/order.js around
-  // line 136. Mirror that here so the seeded order's totals pass the
-  // same calculateOrderCharges() the production path uses, instead of
-  // the prior naïve subtotal+delivery sum that skipped GST + packaging.
-  const restaurant = await db.collection('restaurants').findOne({ _id: args.restaurant_id });
-  if (!restaurant) {
-    console.error(`restaurant not found: ${args.restaurant_id}`);
-    await client.close();
-    process.exit(1);
-  }
-  console.log(`[test-paid-order] restaurant resolved: ${restaurant.business_name || restaurant.brand_name || args.restaurant_id}`);
-
-  // ─── Customer resolution ─────────────────────────────────────
-  // When --customer_phone is provided, look up the real customer so
-  // notifications resolve via the actual customerIdentity flow. When
-  // omitted, fall through with a synthetic id (no notifications fire).
-  let resolvedCustomer = null;
-  let effectiveCustomerPhone;
-  if (args.customer_phone) {
-    const phoneDigits = normalizeDigits(args.customer_phone);
-    if (!phoneDigits) {
-      console.error(`invalid --customer_phone: ${args.customer_phone}`);
-      await client.close();
-      process.exit(1);
-    }
-    // 1. Exact match on the normalised digit form — the canonical
-    //    pattern used by services/customerIdentity.js and
-    //    routes/dineInFeedback.js.
-    resolvedCustomer = await db.collection('customers').findOne({ wa_phone: phoneDigits });
-    // 2. Substring-regex fallback for partial inputs (e.g. user passed
-    //    last 10 digits while the stored row has a country-code
-    //    prefix). Escape regex metacharacters defensively even though
-    //    we just stripped to digits — guards against future relaxation
-    //    of normalizeDigits.
-    if (!resolvedCustomer) {
-      const escaped = phoneDigits.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      resolvedCustomer = await db.collection('customers').findOne({
-        wa_phone: { $regex: escaped },
-      });
-    }
-    if (!resolvedCustomer) {
-      console.error(`customer not found for phone ${args.customer_phone} — pass an existing wa_phone or omit the flag`);
-      await client.close();
-      process.exit(1);
-    }
-    effectiveCustomerPhone = resolvedCustomer.wa_phone || phoneDigits;
-    console.log(
-      `[test-paid-order] customer resolved: ${resolvedCustomer.name || '(no name)'} (${maskPhone(effectiveCustomerPhone)}) — _id=${resolvedCustomer._id}`,
-    );
-  } else {
-    effectiveCustomerPhone = '919999999999';
-    console.log('[test-paid-order] customer: synthetic (no --customer_phone passed) — phone 919999999999');
-  }
-
-  // Pull 2 active menu items — same $or pattern as services/mpmBuilder.js
-  // so a branch using the legacy scalar field OR the new array form both
-  // resolve. Limit 2 keeps the order realistic without pulling the full
-  // menu.
-  const items = await db.collection('menu_items').find({
-    $or: [{ branch_id: args.branch_id }, { branch_ids: args.branch_id }],
-    is_available: true,
-  }).limit(2).toArray();
-
-  if (!items.length) {
-    console.error(`no available menu_items found for branch ${args.branch_id}`);
-    await client.close();
-    process.exit(1);
-  }
-  console.log(`[test-paid-order] menu items: ${items.length} found`);
-
-  // Build denormalized items[] for the order doc. Field names mirror the
-  // shape inserted by services/order.js (subtotal_rs / line_total_rs,
-  // size + item_group_id when the source row has a variant).
-  const itemDocs = items.map((it) => {
-    const pricePaise = Number(it.price_paise) || 0;
-    return {
-      item_id: it._id,
-      retailer_id: it.retailer_id || null,
-      name: it.name,
-      item_name: it.name,
-      quantity: 1,
-      price_paise: pricePaise,
-      price_rs: pricePaise / 100,
-      line_total_rs: pricePaise / 100,
-      ...(it.size ? { size: it.size } : {}),
-      ...(it.item_group_id ? { item_group_id: it.item_group_id } : {}),
-    };
-  });
-
-  const subtotalPaise = itemDocs.reduce((s, i) => s + (i.price_paise * i.quantity), 0);
-  const subtotalRs = subtotalPaise / 100;
-
-  // Synthetic customer coords — re-using the branch's own lat/lng so
-  // 3PL distance lookups have something plausible to work with. Pulled
-  // up here so the quote call below has access to them; same values
-  // are reused in address_snapshot further down.
-  const fallbackLat = branch.latitude || 17.385;
-  const fallbackLng = branch.longitude || 78.4867;
-  const fallbackCity = branch.city || 'Hyderabad';
-
-  // 3PL delivery quote — exercises the same getDeliveryQuote that
-  // production calls so the seeded order carries a real
-  // platformMarkupRs (₹5 today via DELIVERY_PLATFORM_MARKUP_FLAT_RS).
-  // Falls back to a manual breakdown when Prorouting is unreachable
-  // (common in pre-prod for synthetic coords) so the script still
-  // completes end-to-end. Fallback breakdown matches the field names
-  // getDeliveryQuote returns — providerFeeRs / platformMarkupRs /
-  // totalFeeRs — so any downstream consumer reading delivery_fee_breakdown
-  // sees a consistent shape regardless of code path.
-  let deliveryFeeBreakdown;
-  try {
-    deliveryFeeBreakdown = await getDeliveryQuote(args.branch_id, fallbackLat, fallbackLng, {
-      items: itemDocs,
-      subtotalRs,
-    });
-    console.log(
-      `[test-paid-order] delivery quote: provider=${deliveryFeeBreakdown.providerName || 'unknown'} ` +
-      `provider_fee=${deliveryFeeBreakdown.providerFeeRs} ` +
-      `markup=${deliveryFeeBreakdown.platformMarkupRs} ` +
-      `total=${deliveryFeeBreakdown.totalFeeRs}`,
-    );
-  } catch (err) {
-    const flatMarkup = parseFloat(process.env.DELIVERY_PLATFORM_MARKUP_FLAT_RS || 0);
-    const baseFee = 40;
-    deliveryFeeBreakdown = {
-      providerName: 'fallback',
-      providerFeeRs: baseFee,
-      platformMarkupRs: flatMarkup,
-      totalFeeRs: Math.round((baseFee + flatMarkup) * 100) / 100,
-      estimatedMins: null,
-      distanceKm: null,
-      quoteId: null,
-      quoteExpiresAt: null,
-      surgeActive: false,
-      estimates: [],
-    };
-    console.warn(
-      `[test-paid-order] getDeliveryQuote failed (${err.message}) — ` +
-      `using fallback fee=${baseFee} + markup=${flatMarkup}`,
-    );
-  }
-  const deliveryFeeRs = deliveryFeeBreakdown.totalFeeRs;
-  const deliveryFeePaise = Math.round(deliveryFeeRs * 100);
-
-  // Mirror services/order.js:136-142 exactly. Same fields, same defaults,
-  // so calculateOrderCharges sees an identical restaurantConfig shape
-  // here as it does on the live checkout path.
-  const restaurantConfig = {
-    delivery_fee_customer_pct: restaurant?.delivery_fee_customer_pct ?? 100,
-    menu_gst_mode:             restaurant?.menu_gst_mode             ?? 'included',
-    menu_gst_pct:              restaurant?.menu_gst_pct              ?? 5,
-    packaging_charge_rs:       restaurant?.packaging_charge_rs       ?? 0,
-    packaging_gst_pct:         restaurant?.packaging_gst_pct         ?? 18,
-  };
-  const charges = calculateOrderCharges(restaurantConfig, subtotalRs, deliveryFeeRs, 0);
-  const totalPaise = Math.round(charges.customer_total_rs * 100);
-
-  // Order number: ZM-YYYYMMDD-#### using today's count + 1, matching the
-  // generator in services/order.js so dashboards display a consistent
-  // identifier.
+  // ── Simulate Razorpay payment success ──
   const now = new Date();
-  const dateStr = now.toISOString().slice(0, 10).replace(/-/g, '');
-  const todayStart = new Date(now);
-  todayStart.setHours(0, 0, 0, 0);
-  const todayCount = await db.collection('orders').countDocuments({ created_at: { $gte: todayStart } });
-  const orderNumber = `ZM-${dateStr}-${String(todayCount + 1).padStart(4, '0')}`;
-
-  const orderId = crypto.randomUUID();
-  // Real customer when --customer_phone hit a row; synthetic uuid
-  // otherwise. The notification path's customer findOne keys off this,
-  // so the synthetic case is harmless (lookup → null → no-op).
-  const customerId = resolvedCustomer ? String(resolvedCustomer._id) : crypto.randomUUID();
-  const fakeRzpOrderId = `test_order_${Date.now()}`;
-  const fakeRzpPaymentId = `test_pay_${Date.now()}`;
-
-  const order = {
-    _id: orderId,
-    order_number: orderNumber,
-    restaurant_id: args.restaurant_id,
-    branch_id: args.branch_id,
-    customer_id: customerId,
-    items: itemDocs,
-    // Both rupee and paise totals — restaurant.js queries surface the
-    // _rs fields, while the schema (subtotal_rs/total_rs) is what
-    // validators check. paise variants help any code that prefers
-    // integer math.
-    subtotal_rs: subtotalRs,
-    delivery_fee_rs: charges.customer_delivery_rs,
-    discount_rs: 0,
-    total_rs: charges.customer_total_rs,
-    subtotal_paise: subtotalPaise,
-    delivery_fee_paise: Math.round(charges.customer_delivery_rs * 100),
-    total_paise: totalPaise,
-    // Mirror services/order.js:330-337 so the seeded order carries the
-    // same per-component breakdown the dashboard, settlement, and
-    // analytics paths expect. delivery_fee_total_rs is the FULL 3PL fee
-    // (₹40 here); customer_delivery_rs is only the customer's split.
-    food_gst_rs:                charges.food_gst_rs,
-    customer_delivery_rs:       charges.customer_delivery_rs,
-    customer_delivery_gst_rs:   charges.customer_delivery_gst_rs,
-    restaurant_delivery_rs:     charges.restaurant_delivery_rs,
-    restaurant_delivery_gst_rs: charges.restaurant_delivery_gst_rs,
-    packaging_rs:               charges.packaging_rs,
-    packaging_gst_rs:           charges.packaging_gst_rs,
-    delivery_fee_total_rs:      charges.delivery_fee_total_rs,
-    // 3PL quote snapshot. Production stores dynamicResult.breakdown here
-    // (with `baseFeeRs` instead of `providerFeeRs`); the seeded shape
-    // uses the getDeliveryQuote return shape directly. Both are read
-    // informationally — the queryable platform_markup_rs below is what
-    // financials.aggregateOrderFinancials sums for revenue tracking.
-    delivery_fee_breakdown: deliveryFeeBreakdown,
-    platform_markup_rs: deliveryFeeBreakdown?.platformMarkupRs ?? 0,
-    status: 'PAID',
-    payment_status: 'paid',
-    razorpay_order_id: fakeRzpOrderId,
-    razorpay_payment_id: fakeRzpPaymentId,
-    // WABA routing — real orders carry these so downstream
-    // notification code can send WhatsApp messages without
-    // re-querying. waba_id is omitted from the doc when absent
-    // on the source row (older signups predate the field).
-    phone_number_id: waAccount.phone_number_id,
-    access_token: waAccount.access_token,
-    ...(waAccount.waba_id ? { waba_id: waAccount.waba_id } : {}),
-    delivery_address: 'Test Address Line 1, Test Locality, Hyderabad',
-    address_snapshot: {
-      recipient_name: resolvedCustomer?.name || 'Test Customer',
-      delivery_phone: effectiveCustomerPhone,
-      address_line1: 'Test Address Line 1',
-      area_locality: 'Test Locality',
-      city: fallbackCity,
-      lat: fallbackLat,
-      lng: fallbackLng,
-    },
-    delivery_lat: fallbackLat,
-    delivery_lng: fallbackLng,
-    receiver_name: resolvedCustomer?.name || 'Test Customer',
-    receiver_phone: effectiveCustomerPhone,
-    source: 'whatsapp',
-    paid_at: now,
-    created_at: now,
-    updated_at: now,
-  };
-
-  console.log(
-    `[test-paid-order] charges: subtotal=${subtotalRs.toFixed(2)} ` +
-    `gst=${(charges.food_gst_rs + charges.customer_delivery_gst_rs + charges.packaging_gst_rs).toFixed(2)} ` +
-    `packaging=${charges.packaging_rs.toFixed(2)} ` +
-    `delivery=${charges.customer_delivery_rs.toFixed(2)} ` +
-    `total=${charges.customer_total_rs.toFixed(2)}`,
+  const paymentId = `test_pay_${Date.now()}`;
+  const upd = await col('orders').updateOne(
+    { _id: order._id },
+    { $set: {
+        status: 'PAID',
+        paid_at: now,
+        payment_id: paymentId,
+        payment_method: 'razorpay_test_simulated',
+        updated_at: now,
+      } },
   );
+  console.log(`\nMarked PAID (matched=${upd.matchedCount}, modified=${upd.modifiedCount}, payment_id=${paymentId})`);
 
-  await db.collection('orders').insertOne(order);
-  console.log(`[test-paid-order] order inserted: _id=${orderId} order_number=${orderNumber} total_paise=${totalPaise}`);
+  // ── Enqueue post-payment job chain ──
+  // Mirrors src/webhooks/razorpay.js:657 — enqueueForOrder takes a
+  // single options object { orderId, restaurantId, posEnabled,
+  // petpoojaEnabled }, NOT (orderId, opts). petpoojaEnabled forced true
+  // so the Petpooja push job is always queued for this test.
+  const { POS_INTEGRATIONS_ENABLED } = require('../src/config/features');
+  const { enqueueForOrder } = require('../src/queue/postPaymentJobs');
+  await enqueueForOrder({
+    orderId: order._id,
+    restaurantId: order.restaurant_id,
+    posEnabled: !!POS_INTEGRATIONS_ENABLED,
+    petpoojaEnabled: true,
+  });
+  console.log('Jobs enqueued. Worker loop will process them in background.');
 
-  // ─── Queue ───────────────────────────────────────────────────
-  // Use the production helper rather than a fresh Queue instance — that
-  // way the script automatically inherits any future change to job
-  // options (jobId/delay/attempts/removeOnComplete) made in
-  // src/jobs/orderAcceptanceQueue.js. The same helper is called by
-  // core/orderStateEngine.js when a real PAID transition lands.
-  const { addAcceptanceTimeoutJob } = require(path.join(__dirname, '..', 'src', 'jobs', 'orderAcceptanceQueue'));
-  const { jobId } = await addAcceptanceTimeoutJob(orderId);
-  console.log(`[test-paid-order] acceptance-timeout job enqueued: jobId=${jobId}`);
+  // ── Poll for the Petpooja stamp (every 2s, up to 30s) ──
+  const POLL_MS = 2000;
+  const TIMEOUT_MS = 30000;
+  const deadline = Date.now() + TIMEOUT_MS;
+  let latest = order;
 
-  // Stamp the job id on the order — mirrors orderStateEngine.js so a
-  // subsequent /accept or /decline can cancel the job by id.
-  await db.collection('orders').updateOne(
-    { _id: orderId },
-    { $set: { acceptance_timeout_job_id: jobId, acceptance_timeout_scheduled_at: new Date() } },
-  );
+  while (Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, POLL_MS));
+    latest = await col('orders').findOne(
+      { _id: order._id },
+      { projection: { petpooja_order_id: 1, petpooja_pushed_at: 1, petpooja_push_failed: 1, status: 1 } },
+    );
+    const secs = Math.round((TIMEOUT_MS - (deadline - Date.now())) / 1000);
+    console.log(
+      `  [+${secs}s] status=${latest?.status} ` +
+      `petpooja_order_id=${latest?.petpooja_order_id ?? '—'} ` +
+      `push_failed=${latest?.petpooja_push_failed ?? '—'}`,
+    );
+    if (latest?.petpooja_order_id || latest?.petpooja_push_failed) break;
+  }
 
-  console.log('');
-  console.log('────────────────────────────────────────────');
-  console.log(`order _id:        ${orderId}`);
-  console.log(`order_number:     ${orderNumber}`);
-  console.log(`bullmq jobId:     ${jobId}`);
-  console.log(`status:           PAID`);
-  console.log(`branch:           ${branch.name} (${args.branch_id})`);
-  console.log(`customer:         ${resolvedCustomer ? `${resolvedCustomer.name || '(no name)'} ${maskPhone(effectiveCustomerPhone)} (real)` : 'synthetic uuid (no notifications)'}`);
-  console.log(`total_paise:      ${totalPaise}`);
-  console.log('────────────────────────────────────────────');
+  console.log('\n── FINAL PETPOOJA STATE ──');
+  console.log(`  petpooja_order_id:    ${latest?.petpooja_order_id ?? '—'}`);
+  console.log(`  petpooja_pushed_at:   ${latest?.petpooja_pushed_at ? new Date(latest.petpooja_pushed_at).toISOString() : '—'}`);
+  console.log(`  petpooja_push_failed: ${latest?.petpooja_push_failed ?? '—'}`);
 
-  // ─── Clean shutdown ──────────────────────────────────────────
-  await client.close();
-  const redisConnection = require(path.join(__dirname, '..', 'src', 'queue', 'redis'));
-  await redisConnection.quit();
+  if (!latest?.petpooja_order_id && !latest?.petpooja_push_failed) {
+    console.log('\nNot stamped within 30s. Is a worker (postPaymentJobs.start()) running in the app process?');
+  }
 }
 
-main().then(() => {
-  process.exit(0);
-}).catch((err) => {
-  console.error('[test-paid-order] FAILED:', err && err.message ? err.message : err);
-  process.exit(1);
-});
+main()
+  .then(() => process.exit(0))
+  .catch((err) => { console.error('Fatal:', err && err.message ? err.message : err); process.exit(2); });
