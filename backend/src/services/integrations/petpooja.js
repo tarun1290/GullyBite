@@ -143,6 +143,95 @@ async function fetchMenu(integration) {
   return { categories, items };
 }
 
+// ─── PUSH MENU PARSER ────────────────────────────────────
+// Petpooja Push Menu delivers the full menu in the webhook body, so no
+// API fetch is needed. Normalizes the raw payload into the same
+// { categories, items } shape upsertMenu expects — identical
+// transformation to fetchMenu (variant explosion, FOOD_TYPE_MAP,
+// slugify, retailer_id / item_group_id).
+function parsePushMenuPayload(payload) {
+  const rawCategories = Array.isArray(payload.categories) ? payload.categories : [];
+  const rawItems = Array.isArray(payload.items) ? payload.items : [];
+
+  // ── Build category id → name map ──────────────────────
+  const catNameById = {};
+  rawCategories.forEach(c => {
+    catNameById[c.categoryid] = c.categoryname;
+  });
+
+  // ── Normalize categories ───────────────────────────────
+  const categories = rawCategories.map((c, i) => ({
+    name       : c.categoryname,
+    sort_order : i,
+  }));
+
+  // ── Normalize items with variant explosion ─────────────
+  const now = new Date();
+  const items = [];
+  let variantCount = 0;
+
+  for (const item of rawItems) {
+    const foodTag = FOOD_TYPE_MAP[item.item_type] || 'Veg';
+    const category = catNameById[item.categoryid] || 'Menu';
+    const tags = [foodTag, category];
+    if (item.bestseller === '1' || item.is_bestseller) tags.push('Bestseller');
+    if (item.is_new === '1') tags.push('New');
+
+    const base = {
+      name         : item.itemname,
+      description  : item.item_description || '',
+      image_url    : item.item_image_url || null,
+      is_available : item.item_active === '1',
+      pos_item_id  : String(item.itemid),
+      pos_platform : 'petpooja',
+      food_type    : foodTag.toLowerCase().replace('-', '_'),
+      category,
+      google_product_category : 'Food, Beverages & Tobacco > Food Items',
+      fb_product_category     : 'Food & Beverages > Prepared Food',
+      product_tags : tags,
+      brand        : null,
+      sale_price_paise : null,
+      quantity_to_sell_on_facebook : null,
+      condition    : 'new',
+      pos_synced_at        : now,
+      catalog_sync_status  : 'pending',
+    };
+
+    const variations = Array.isArray(item.variations) ? item.variations : [];
+    const hasVariants = item.itemallowvariation === '1' && variations.length > 1;
+
+    if (hasVariants) {
+      const groupId = `PP-${item.itemid}`;
+      for (const v of variations) {
+        const size = v.name || v.variationname || 'Regular';
+        items.push({
+          ...base,
+          price_paise    : Math.round((parseFloat(v.price) || 0) * 100),
+          retailer_id    : `PP-${item.itemid}-${slugify(size)}`,
+          item_group_id  : groupId,
+          size,
+        });
+        variantCount++;
+      }
+    } else {
+      const price = variations.length === 1
+        ? parseFloat(variations[0].price) || parseFloat(item.price) || 0
+        : parseFloat(item.price) || 0;
+      items.push({
+        ...base,
+        price_paise    : Math.round(price * 100),
+        retailer_id    : `PP-${item.itemid}`,
+        item_group_id  : null,
+        size           : null,
+      });
+    }
+  }
+
+  log.info({ posItems: rawItems.length, menuRows: items.length, variantRows: variantCount, source: 'push_menu' }, 'Push Menu parsed');
+
+  return { categories, items };
+}
+
 // ─── WEBHOOK PARSERS ─────────────────────────────────────
 function parseWebhookEvent(payload) {
   try {
@@ -151,7 +240,7 @@ function parseWebhookEvent(payload) {
                      payload.restaurants?.[0]?.details?.menusharingcode || null;
     // Petpooja Push Menu: full menu payload has restaurants[] and items[] at root
     if (!eventType && (Array.isArray(payload.restaurants) || Array.isArray(payload.items))) {
-      return { type: 'menu_update', outletId };
+      return { type: 'menu_update', outletId, rawPayload: payload };
     }
     if (eventType.includes('stock') || eventType.includes('itemstock')) {
       return { type: 'stock_update', outletId, items: parseStockUpdate(payload).items };
@@ -179,4 +268,4 @@ function parseStockUpdate(payload) {
   }
 }
 
-module.exports = { fetchMenu, parseWebhookEvent, parseStockUpdate };
+module.exports = { fetchMenu, parseWebhookEvent, parseStockUpdate, parsePushMenuPayload };

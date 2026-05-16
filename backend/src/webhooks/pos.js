@@ -148,9 +148,25 @@ router.post('/:platform', async (req, res) => {
 
     // ── MENU UPDATE — full re-pull ──
     if (event.type === 'menu_update') {
-      log.info({ platform, branchId }, 'Menu update — triggering incremental sync');
-      triggerSync(platform, String(integration._id), restaurantId, 'incremental')
-        .catch(err => log.error({ err }, 'Menu sync failed'));
+      // If the event carried the full payload (Push Menu), parse and upsert directly.
+      // Otherwise fall back to triggerSync which fetches from Petpooja API.
+      if (event.rawPayload) {
+        const { upsertMenu } = require('../services/posSync');
+        const parsed = svc.parsePushMenuPayload(event.rawPayload);
+        upsertMenu(branchId, platform, parsed, 'incremental')
+          .then(result => {
+            log.info({ platform, branchId, ...result }, 'Push Menu upserted directly');
+            // Fire catalog chain
+            const catalog = require('../services/catalog');
+            memcache.del(`branch:${branchId}:menu`);
+            catalog.syncBranchCatalog(branchId)
+              .catch(err => log.error({ err }, 'Catalog sync failed after push menu'));
+          })
+          .catch(err => log.error({ err }, 'Push Menu upsert failed'));
+      } else {
+        triggerSync(platform, String(integration._id), restaurantId, 'incremental')
+          .catch(err => log.error({ err }, 'Menu sync failed'));
+      }
     }
 
   } catch (err) {
