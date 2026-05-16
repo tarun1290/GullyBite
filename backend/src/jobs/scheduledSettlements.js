@@ -46,7 +46,7 @@ async function runScheduledSettlements() {
 
       const result = await settlementSvc.executeSettlement(rid, {
         trigger: 'cron:auto',
-        payout_mode: 'fallback_provider',
+        payout_mode: 'manual',
       });
       summary.processed++;
       log.info({ restaurantId: rid, result }, 'scheduledSettlements.restaurant_done');
