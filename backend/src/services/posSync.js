@@ -104,6 +104,8 @@ async function upsertMenu(branchId, platform, { categories, items }, syncMode) {
     catMap[cat.name] = existing._id;
   }
 
+  log.info({ catMapKeys: Object.keys(catMap), sampleItemCategory: items[0]?.category }, 'upsertMenu debug');
+
   if (syncMode === 'full_replace') {
     await col('menu_items').updateMany(
       { branch_id: branchId, pos_platform: platform },
