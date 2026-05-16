@@ -130,6 +130,7 @@ async function upsertMenu(branchId, platform, { categories, items }, syncMode) {
 
       if (changed) {
         const $set = { name: item.name, price_paise: item.price_paise, is_available: item.is_available, description: item.description, pos_synced_at: now, catalog_sync_status: 'pending', updated_at: now };
+        if (categoryId) $set.category_id = categoryId;
         if (item.image_url) $set.image_url = item.image_url;
         if (!existing._manual_tags) $set.product_tags = item.product_tags;
         if (!existing._manual_meta) { $set.item_group_id = item.item_group_id; $set.size = item.size; $set.google_product_category = item.google_product_category; $set.fb_product_category = item.fb_product_category; }
