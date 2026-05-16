@@ -151,6 +151,7 @@ router.post('/:platform', async (req, res) => {
       // If the event carried the full payload (Push Menu), parse and upsert directly.
       // Otherwise fall back to triggerSync which fetches from Petpooja API.
       if (event.rawPayload) {
+        log.info({ branchId, platform, itemCount: event.rawPayload?.items?.length }, 'rawPayload branch entered');
         const { upsertMenu } = require('../services/posSync');
         const parsed = svc.parsePushMenuPayload(event.rawPayload);
         upsertMenu(branchId, platform, parsed, 'incremental')
