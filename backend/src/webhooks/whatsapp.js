@@ -3388,6 +3388,15 @@ const sendRatingRequest = async (orderId, pid, token, to) => {
     const existing = await col('order_ratings').findOne({ order_id: orderId });
     if (existing) return; // already rated
 
+    // Items the customer ordered — surfaced as a CheckboxGroup on
+    // RATING_SCREEN so they can flag which dishes they loved. Orders use
+    // a string UUID _id (newId()), so the order is already in scope from
+    // the findOne above and we map off it directly — NOT new ObjectId()
+    // (that throws on a non-hex UUID and there is no second lookup).
+    const ordered_items = Array.isArray(order.items)
+      ? order.items.map((i) => ({ id: String(i.item_id || i._id), title: i.name }))
+      : [];
+
     // Try WhatsApp Flow — check platform_settings first, then env var
     const flowSetting = await col('platform_settings').findOne({ _id: 'feedback_flow' });
     const flowId = flowSetting?.flow_id || process.env.RATING_FLOW_ID;
@@ -3401,7 +3410,7 @@ const sendRatingRequest = async (orderId, pid, token, to) => {
           flowData: {
             body: `How was your order #${order.order_number}?\n\nTap below to rate your food and delivery experience.`,
             footer: 'Your feedback helps improve quality',
-            screenData: { order_number: order.order_number, order_id: orderId, flow_token: `rating_${orderId}` },
+            screenData: { order_number: order.order_number, order_id: orderId, flow_token: `rating_${orderId}`, ordered_items },
           },
         });
         return; // Flow sent successfully
@@ -4259,6 +4268,10 @@ const handleFlowResponse = async (responseData, customer, conv, waAccount) => {
     const valueRating    = parseInt(responseData.value_rating) || 0;
     const comment        = responseData.comment || responseData.feedback || null;
     const foodRating     = tasteRating; // backward compat
+    // Optional CheckboxGroup on RATING_SCREEN — ids of the ordered items
+    // the customer ticked as "loved". Empty array if they skipped it
+    // (loved_items is never required).
+    const lovedItemIds   = Array.isArray(responseData.loved_items) ? responseData.loved_items : [];
 
     if (!orderId || !tasteRating) {
       await wa.sendText(pid, token, to, 'Thanks for your feedback! 😊');
@@ -4289,6 +4302,7 @@ const handleFlowResponse = async (responseData, customer, conv, waAccount) => {
         overall_rating: overall,
         comment,
         feedback_tags: [],
+        loved_item_ids: lovedItemIds,
         source: 'whatsapp_flow',
         created_at: new Date(),
       });

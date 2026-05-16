@@ -40,7 +40,7 @@ const INDEXES = [
   { collection: 'menu_items', index: { item_group_id: 1, branch_id: 1 } },
   { collection: 'menu_items', index: { restaurant_id: 1, is_available: 1, 'trust_metrics.trust_tag': 1 } },
   { collection: 'menu_items', index: { restaurant_id: 1, 'trust_metrics.average_rating': -1 } },
-  { collection: 'order_ratings', index: { order_id: 1 } },
+  { collection: 'order_ratings', index: { order_id: 1 }, options: { unique: true } },
   { collection: 'order_state_log', index: { order_id: 1, timestamp: -1 } },
   { collection: 'order_state_log', index: { timestamp: -1 } },
   // Catalog compression indexes
