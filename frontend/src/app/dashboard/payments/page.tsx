@@ -5,12 +5,14 @@ import FinancialSummarySection from '../../../components/restaurant/payments/Fin
 import SettlementsSection from '../../../components/restaurant/payments/SettlementsSection';
 import WalletSection from '../../../components/restaurant/payments/WalletSection';
 import TaxSummarySection from '../../../components/restaurant/payments/TaxSummarySection';
+import PenaltiesSection from '../../../components/restaurant/payments/PenaltiesSection';
 
 const SECTIONS: ReadonlyArray<readonly [string, string]> = [
   ['summary', '📊 Summary'],
   ['settlements', '💰 Settlements'],
   ['wallet', '💳 Wallet'],
   ['tax', '📋 Tax'],
+  ['penalties', '⚠️ Penalties'],
 ];
 
 export default function PaymentsPage() {
@@ -35,6 +37,7 @@ export default function PaymentsPage() {
       {activeSection === 'settlements' && <SettlementsSection />}
       {activeSection === 'wallet' && <WalletSection />}
       {activeSection === 'tax' && <TaxSummarySection />}
+      {activeSection === 'penalties' && <PenaltiesSection />}
     </div>
   );
 }

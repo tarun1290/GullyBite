@@ -6,7 +6,6 @@
 const express = require('express');
 const router  = express.Router();
 const { col, newId, mapId, mapIds } = require('../config/database');
-const { runSettlement } = require('../jobs/settlement');
 const { logActivity } = require('../services/activityLog');
 const issueSvc = require('../services/issues');
 const axios = require('axios');
@@ -1250,8 +1249,9 @@ router.patch('/restaurants/:id', express.json(), async (req, res) => {
 
 // ─── POST /api/admin/settlements/run ─────────────────────────
 // Phase 5 — Manually trigger an on-demand ledger-balance settlement
-// for a single restaurant. Separate from /run-settlement (which runs
-// the legacy weekly cycle across all tenants).
+// for a single restaurant. (The legacy cross-tenant /run-settlement
+// route was removed — auto-settlement now runs Mon+Thu via
+// jobs/scheduledSettlements.js.)
 router.post('/settlements/run', requireAdmin, express.json(), async (req, res) => {
   try {
     const restaurantId = req.body?.restaurant_id;
@@ -1294,6 +1294,35 @@ router.post('/settlements/run', requireAdmin, express.json(), async (req, res) =
   } catch (e) {
     log.error({ err: e }, 'admin.settlements.run failed');
     res.status(500).json({ success: false, message: "Internal server error" });
+  }
+});
+
+// ─── POST /api/admin/snapshots/run ───────────────────────────
+// Manually trigger a full branch-billing snapshot (same work the
+// monthly cron does). Body optional { month_key } — defaults to the
+// current IST month; an explicit YYYY-MM re-snapshots that month.
+// Idempotent: existing per-branch rows are preserved; the anchor's
+// branch_count is refreshed.
+router.post('/snapshots/run', requireAdmin, express.json(), async (req, res) => {
+  try {
+    const monthKey = typeof req.body?.month_key === 'string' && /^\d{4}-\d{2}$/.test(req.body.month_key)
+      ? req.body.month_key
+      : undefined;
+    const branchSnapshot = require('../jobs/branchSnapshot');
+    const result = await branchSnapshot.snapshotAllActiveBranchesForMonth({ trigger: 'manual', monthKey });
+
+    logActivity({
+      actorType: 'admin', actorId: req.adminUser?._id || null, actorName: req.adminUser?.email || 'Admin',
+      action: 'settlement.snapshot_run', category: 'billing',
+      description: `Admin triggered branch billing snapshot for ${result.monthKey}: ${JSON.stringify(result)}`,
+      resourceType: 'branch_billing_snapshots', resourceId: `month:${result.monthKey}`,
+      severity: 'info', metadata: result,
+    });
+
+    res.json(result);
+  } catch (e) {
+    log.error({ err: e }, 'admin.snapshots.run failed');
+    res.status(500).json({ success: false, message: 'Internal server error' });
   }
 });
 
@@ -1491,19 +1520,10 @@ router.post('/settlements/fail', requireAdmin, express.json(), async (req, res) 
   }
 });
 
-// ─── POST /api/admin/run-settlement ──────────────────────────
-router.post('/run-settlement', async (req, res) => {
-  try {
-    logActivity({
-      actorType: 'admin', actorId: null, actorName: 'Admin',
-      action: 'settlement.generated', category: 'settlement',
-      description: 'Settlement run triggered manually by admin',
-      resourceType: 'settlement', resourceId: null, severity: 'info',
-    });
-    res.json({ message: 'Settlement started' });
-    runSettlement().catch(err => log.error({ err }, 'Settlement run failed'));
-  } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
-});
+// (Removed) POST /api/admin/run-settlement — the legacy cross-tenant
+// weekly-cycle trigger. Auto-settlement now runs Mon+Thu 06:00 IST via
+// jobs/scheduledSettlements.js; single-restaurant manual runs use
+// POST /api/admin/settlements/run.
 
 // ─── GET /api/admin/applications ─────────────────────────────
 router.get('/applications', async (req, res) => {
@@ -1548,6 +1568,54 @@ router.patch('/applications/:id/approve', express.json(), async (req, res) => {
     );
     if (!updated) return res.status(404).json({ error: 'Not found' });
 
+    // Auto-approve any branches still in 'pending_approval' under this
+    // restaurant — approving the restaurant implicitly approves its
+    // outstanding branches. Snapshot each so Phase 5 bills the month it
+    // went active. Snapshot failure is logged, never rolled back.
+    try {
+      const pendingBranches = await col('branches')
+        .find({ restaurant_id: req.params.id, subscription_status: 'pending_approval' })
+        .project({ _id: 1, restaurant_id: 1 })
+        .toArray();
+      const autoApprovedIds = [];
+      for (const b of pendingBranches) {
+        const flipped = await col('branches').findOneAndUpdate(
+          { _id: b._id, subscription_status: 'pending_approval' },
+          { $set: {
+              subscription_status: 'active',
+              approved_at: now,
+              approved_by: req.adminUser?._id || null,
+              approval_notes: 'auto-approved with restaurant',
+              updated_at: now,
+            } },
+          { returnDocument: 'after' },
+        );
+        if (!flipped) continue;
+        autoApprovedIds.push(String(b._id));
+        try {
+          await require('../jobs/branchSnapshot').snapshotBranchOnActivation({
+            branchId: String(b._id),
+            restaurantId: String(b.restaurant_id),
+          });
+        } catch (snapErr) {
+          log.error({ err: snapErr?.message, branchId: String(b._id) }, 'auto-approve branch snapshot failed (not rolled back)');
+        }
+      }
+      if (autoApprovedIds.length) {
+        invalidateCache(`restaurant:${req.params.id}:branches`, `restaurant:${req.params.id}:profile`);
+        logActivity({
+          actorType: 'admin', actorId: req.adminUser?._id || null, actorName: req.adminUser?.email || 'Admin',
+          action: 'restaurant.approved_with_branches', category: 'admin',
+          description: `Restaurant "${updated.business_name}" approved; auto-approved ${autoApprovedIds.length} branch(es): ${autoApprovedIds.join(', ')}`,
+          restaurantId: req.params.id, resourceType: 'restaurant', resourceId: req.params.id,
+          severity: 'info', metadata: { auto_approved_branch_ids: autoApprovedIds },
+        });
+      }
+    } catch (branchErr) {
+      // Branch auto-approval must not block the restaurant approval flow.
+      log.error({ err: branchErr?.message, restaurantId: req.params.id }, 'restaurant approve: branch auto-approval failed');
+    }
+
     ws.broadcastToAdmin('restaurant_status', { restaurantId: req.params.id, restaurantName: updated.business_name, status: 'approved' });
 
     // Auto-list in WhatsApp directory (fire-and-forget)
@@ -1591,6 +1659,102 @@ router.patch('/applications/:id/approve', express.json(), async (req, res) => {
     res.json({ ok: true, restaurant: mapId(updated) });
   } catch (err) {
     res.status(500).json({ success: false, message: "Internal server error" });
+  }
+});
+
+// ─── Branch approval (admin-gated onboarding) ────────────────
+// Shared atomic flip: pending_approval → active, then snapshot the
+// branch into the current billing month. Snapshot failure is logged,
+// never rolled back — it can be re-triggered via POST /admin/snapshots/run.
+// (Auth: covered by the router-level requireAdminAuth() mount at the top
+// of this file — same as the neighbouring application-approval routes.)
+async function _approveBranchAtomic(branchId, adminId, notes) {
+  const now = new Date();
+  const updated = await col('branches').findOneAndUpdate(
+    { _id: String(branchId), subscription_status: 'pending_approval' },
+    { $set: {
+        subscription_status: 'active',
+        approved_at: now,
+        approved_by: adminId || null,
+        approval_notes: notes || null,
+        updated_at: now,
+      } },
+    { returnDocument: 'after' },
+  );
+  if (!updated) return null;
+  try {
+    await require('../jobs/branchSnapshot').snapshotBranchOnActivation({
+      branchId: String(updated._id),
+      restaurantId: String(updated.restaurant_id),
+    });
+  } catch (snapErr) {
+    log.error({ err: snapErr?.message, branchId: String(updated._id) }, 'branch approve snapshot failed (not rolled back)');
+  }
+  return updated;
+}
+
+// ─── POST /api/admin/branches/:branchId/approve ──────────────
+router.post('/branches/:branchId/approve', express.json(), async (req, res) => {
+  try {
+    const { notes } = req.body || {};
+    const adminId = req.adminUser?._id || null;
+    const updated = await _approveBranchAtomic(req.params.branchId, adminId, notes);
+    if (!updated) return res.status(409).json({ error: 'branch_not_in_pending_approval' });
+
+    invalidateCache(`restaurant:${updated.restaurant_id}:branches`, `restaurant:${updated.restaurant_id}:profile`);
+    logActivity({
+      actorType: 'admin', actorId: adminId, actorName: req.adminUser?.email || 'Admin',
+      action: 'branch.approved', category: 'admin',
+      description: `Branch ${updated._id} approved`,
+      restaurantId: String(updated.restaurant_id), resourceType: 'branch', resourceId: String(updated._id),
+      severity: 'info',
+    });
+    res.json({ ok: true, branch: mapId(updated) });
+  } catch (e) {
+    log.error({ err: e?.message, branchId: req.params.branchId }, 'admin.branches.approve failed');
+    res.status(500).json({ success: false, message: 'Internal server error' });
+  }
+});
+
+// ─── POST /api/admin/branches/bulk-approve ───────────────────
+router.post('/branches/bulk-approve', express.json(), async (req, res) => {
+  try {
+    const branchIds = Array.isArray(req.body?.branch_ids) ? req.body.branch_ids : null;
+    if (!branchIds || !branchIds.length) {
+      return res.status(400).json({ error: 'branch_ids (non-empty array) required' });
+    }
+    if (branchIds.length > 50) {
+      return res.status(400).json({ error: 'Max 50 branch_ids per request' });
+    }
+    const adminId = req.adminUser?._id || null;
+    const approved = [], skipped = [], failed = [];
+    const touchedRestaurants = new Set();
+
+    for (const rawId of branchIds) {
+      const branchId = String(rawId);
+      try {
+        const updated = await _approveBranchAtomic(branchId, adminId, 'bulk-approved');
+        if (!updated) { skipped.push(branchId); continue; }
+        approved.push(branchId);
+        touchedRestaurants.add(String(updated.restaurant_id));
+        logActivity({
+          actorType: 'admin', actorId: adminId, actorName: req.adminUser?.email || 'Admin',
+          action: 'branch.bulk_approved', category: 'admin',
+          description: `Branch ${branchId} approved (bulk)`,
+          restaurantId: String(updated.restaurant_id), resourceType: 'branch', resourceId: branchId,
+          severity: 'info',
+        });
+      } catch (err) {
+        failed.push({ branch_id: branchId, error: err?.message || 'error' });
+      }
+    }
+    for (const rid of touchedRestaurants) {
+      invalidateCache(`restaurant:${rid}:branches`, `restaurant:${rid}:profile`);
+    }
+    res.json({ approved, skipped, failed });
+  } catch (e) {
+    log.error({ err: e?.message }, 'admin.branches.bulk-approve failed');
+    res.status(500).json({ success: false, message: 'Internal server error' });
   }
 });
 
@@ -2012,16 +2176,44 @@ router.get('/settlements', async (req, res) => {
       col('settlements').countDocuments(filter),
     ]);
 
-    const enriched = await Promise.all(settlements.map(async s => {
-      const restaurant = await col('restaurants').findOne({ _id: s.restaurant_id }, { projection: { business_name: 1 } });
+    // Batched restaurant enrichment (replaces the prior per-row findOne):
+    // business_name + the bank fields the admin needs to do the manual
+    // bank transfer. Holder name = business_name (no dedicated holder
+    // field on the schema; business_name is the canonical beneficiary —
+    // it's what services/payment.js uses as the Razorpay bank_account.name).
+    const ridList = [...new Set(settlements.map(s => s.restaurant_id).filter(Boolean))];
+    const rDocs = ridList.length
+      ? await col('restaurants').find(
+          { _id: { $in: ridList } },
+          { projection: { business_name: 1, bank_name: 1, bank_account_number: 1, bank_ifsc: 1 } },
+        ).toArray()
+      : [];
+    const rById = new Map(rDocs.map(r => [String(r._id), r]));
+
+    const enriched = settlements.map(s => {
+      const r = rById.get(String(s.restaurant_id));
+      // Only expose bank details when a transfer is actually possible
+      // (both account number + IFSC present) — same gate services/
+      // payment.js#registerPayoutAccount uses. Otherwise null so the UI
+      // can surface the gap and block mark-paid.
+      const hasBank = !!(r && r.bank_account_number && r.bank_ifsc);
+      const restaurant_bank_details = hasBank
+        ? {
+            account_holder_name: r.business_name || null,
+            account_number:      r.bank_account_number,
+            ifsc:                r.bank_ifsc,
+            bank_name:           r.bank_name || null,
+          }
+        : null;
       return {
         ...mapId(s),
-        business_name: restaurant?.business_name || '—',
+        business_name: r?.business_name || '—',
+        restaurant_bank_details,
         // Phase 5.2 — Meta marketing cost deduction (0 on pre-integration rows).
         meta_cost_total_paise: s.meta_cost_total_paise || 0,
         meta_message_count:    s.meta_message_count || 0,
       };
-    }));
+    });
 
     res.json({ settlements: enriched, total });
   } catch (err) {

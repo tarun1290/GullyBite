@@ -26,7 +26,12 @@
 const { col, newId } = require('../config/database');
 const ledger = require('./ledger.service');
 const payoutSvc = require('./payout.service');
-const { FINANCE_CONFIG, isFirstBillingMonth } = require('../config/financeConfig');
+// The first-month-waiver helper is intentionally NOT imported — Phase 5
+// no longer waives month-1 (subscription is collected off-ledger at
+// onboarding and billed per-branch from the snapshot). That export still
+// exists in financeConfig.js for other callers (left untouched).
+const { FINANCE_CONFIG } = require('../config/financeConfig');
+const branchSnapshot = require('../jobs/branchSnapshot');
 const log = require('../utils/logger').child({ component: 'settlement' });
 
 const COLLECTION = 'settlements';
@@ -98,7 +103,7 @@ async function calculateSettlement(restaurantId) {
   const inflightAgg = await col(COLLECTION).aggregate([
     { $match: {
         restaurant_id: rid,
-        status: { $in: ['pending', 'processing', 'pending_manual_payout'] },
+        status: { $in: ['processing', 'pending_manual_payout'] },
         payout_amount_paise: { $gt: 0 },
         // Restrict to Phase 5 rows; legacy weekly rows use a different
         // reservation model (orders.settlement_id) and must not be
@@ -143,25 +148,19 @@ async function executeSettlement(restaurantId, { trigger = 'manual', payout_mode
   const mode = payout_mode === 'manual' ? 'manual' : 'auto';
   log.info({ restaurantId: rid, trigger, payout_mode: mode }, 'settlement.start');
 
-  // (14) Idempotency — one in-flight settlement at a time per tenant.
-  const inflight = await col(COLLECTION).findOne({
-    restaurant_id: rid,
-    status: { $in: ['pending', 'processing'] },
-  });
-  if (inflight) {
-    log.warn({ restaurantId: rid, settlementId: inflight._id, status: inflight.status }, 'settlement.skip.inflight');
-    return { skipped: true, reason: 'inflight', settlement_id: inflight._id };
-  }
+  // Idempotency is now enforced atomically at row-creation time via a
+  // findOneAndUpdate upsert + the uq_in_flight_settlement partial unique
+  // index (see below). The previous non-atomic findOne-then-insert had a
+  // race window between the check and the insert; two concurrent runs
+  // could both pass it and double-pay. settlementId/now are minted here
+  // so the snapshot-missing failed row and the in-flight upsert share them.
+  const settlementId = newId();
+  const now = new Date();
 
-  // Restaurant doc is needed up-front for first-month check + fund account
-  // gating. Projection includes the three timestamps isFirstBillingMonth()
-  // consults (billing_start_date → approved_at → created_at).
+  // Restaurant doc — needed for fund-account gating on auto payouts.
   const restaurant = await col('restaurants').findOne(
     { _id: rid },
-    { projection: {
-        business_name: 1, razorpay_fund_acct_id: 1,
-        created_at: 1, approved_at: 1, billing_start_date: 1,
-    } }
+    { projection: { business_name: 1, razorpay_fund_acct_id: 1 } }
   );
   if (!restaurant) {
     log.warn({ restaurantId: rid }, 'settlement.skip.restaurant_not_found');
@@ -170,42 +169,97 @@ async function executeSettlement(restaurantId, { trigger = 'manual', payout_mode
 
   const calc = await calculateSettlement(rid);
 
-  // ── Monthly platform fee + GST (₹3,000/month + 18% = ₹3,540) ──
-  // Deducted from the SECOND billing month onward. First month waives
-  // BOTH (collected upfront at onboarding, GST-inclusive). Two separate
-  // ledger debits — fee and GST — keyed for monthly idempotency:
-  //   platform_fee     → ref_id '<rid>:YYYY-MM'
-  //   platform_fee_gst → ref_id '<rid>:YYYY-MM:gst'
-  // The unique (restaurant_id, ref_type, ref_id) ledger index means a
-  // re-run within the same calendar month no-ops on both writes.
+  // ── Per-branch platform fee + GST (₹3,000 + 18% = ₹3,540 / branch) ──
+  // No first-month waiver (subscription is collected off-ledger at
+  // onboarding; month-1 billing is owned by Prompt 2's activation flow).
+  // We DO NOT bill "whoever is active right now" — we bill the frozen
+  // branch_billing_snapshots set for this IST month. That snapshot is
+  // taken on the 1st by branchSnapshot cron (or on activation). If the
+  // month has no anchor row the snapshot never ran for this month —
+  // billing zero branches would silently under-charge, so we abort the
+  // whole settlement with a failed row and let ops re-run the snapshot.
+  //
+  // Per-branch idempotency keys (unique ledger index no-ops a re-run):
+  //   platform_fee     → ref_id '<branchId>:YYYY-MM'
+  //   platform_fee_gst → ref_id '<branchId>:YYYY-MM:gst'
   // Each debit is the FULL amount even when the balance is short — the
-  // ledger goes negative, the remainder is "carried" automatically into
-  // next month's payout. The actual payout is clamped to >= 0 below.
-  // IST month key — the platform's billing periods follow IST, not UTC.
+  // ledger goes negative, the remainder carries into next month's payout.
+  // IST month key — platform billing periods follow IST, not UTC.
   const istNow = new Date(Date.now() + 5.5 * 60 * 60 * 1000);
   const monthKey = istNow.toISOString().slice(0, 7); // 'YYYY-MM'
   const platformFeePaise = FINANCE_CONFIG.subscriptionPricePaise;
   const platformFeeGstPaise = Math.round(platformFeePaise * FINANCE_CONFIG.gstRate);
-  const platformFeeWaived = isFirstBillingMonth(restaurant);
 
-  if (platformFeeWaived) {
-    log.info({ restaurantId: rid, monthKey, platformFeePaise, platformFeeGstPaise },
-      'platform_fee_gst: first month — both fee and GST waived');
-  } else if (platformFeePaise > 0) {
-    const monthRefId = `${rid}:${monthKey}`;
+  // Snapshot-missing guard. The original spec threw + caught at the top of
+  // executeSettlement; implemented here as an explicit inline abort instead
+  // so we don't wrap the entire money-path function body in a new try/catch
+  // that could mask provider/ledger errors. Same observable contract: a
+  // 'failed' settlement row with failure_reason 'snapshot_missing_for_<mk>'
+  // and NO payout calc / NO payout debit.
+  const anchorOk = await branchSnapshot.hasMonthAnchor(monthKey);
+  if (!anchorOk) {
+    const failureReason = `snapshot_missing_for_${monthKey}`;
+    log.error({ restaurantId: rid, monthKey }, 'settlement.abort.snapshot_missing');
     try {
-      await ledger.debit({
-        restaurantId: rid,
-        amountPaise: platformFeePaise,
-        refType: 'platform_fee',
-        refId: monthRefId,
-        status: 'completed',
-        notes: `Monthly platform subscription ₹${FINANCE_CONFIG.monthlyPlatformFeeRs} for ${monthKey}`,
+      await col(COLLECTION).insertOne({
+        _id: settlementId,
+        restaurant_id: rid,
+        settlement_type: 'new',
+        gross_amount_paise: calc.gross,
+        refund_amount_paise: calc.refunds,
+        payout_amount_paise: 0,
+        net_amount_paise: 0,
+        net_payout_rs: 0,
+        total_amount_paise: 0,
+        platform_fee_paise: 0,
+        platform_fee_gst_paise: 0,
+        platform_fee_month: monthKey,
+        platform_fee_waived: false,
+        status: 'failed',
+        payout_id: null,
+        payout_provider: null,
+        payout_mode: mode,
+        external_reference: null,
+        attempt_count: 0,
+        last_attempt_at: null,
+        trigger,
+        created_at: now,
+        processed_at: now,
+        failure_reason: failureReason,
       });
-    } catch (err) {
-      log.error({ err: err?.message, restaurantId: rid, monthKey }, 'settlement.platform_fee.debit_failed');
-      // Continue — fee reconciliation can be done later. We'd rather
-      // pay the merchant than block a settlement on a ledger blip.
+    } catch (insErr) {
+      log.error({ err: insErr?.message, restaurantId: rid }, 'settlement.snapshot_missing.row_insert_failed');
+    }
+    return { success: false, skipped: false, reason: 'snapshot_missing', settlement_id: settlementId, failure_reason: failureReason };
+  }
+
+  // Bill exactly the branches frozen in this month's snapshot (exclude
+  // the 'month:<mk>' anchor row). Two debits per branch, each guarded —
+  // E11000 means already posted this month, swallow.
+  const snapshotRows = await col('branch_billing_snapshots').find({
+    restaurant_id: rid,
+    month_key: monthKey,
+    _id: { $ne: `month:${monthKey}` },
+  }).project({ _id: 1, branch_id: 1 }).toArray();
+
+  for (const sr of snapshotRows) {
+    const branchId = sr.branch_id || String(sr._id).split(':')[0];
+    if (platformFeePaise > 0) {
+      try {
+        await ledger.debit({
+          restaurantId: rid,
+          amountPaise: platformFeePaise,
+          refType: 'platform_fee',
+          refId: `${branchId}:${monthKey}`,
+          status: 'completed',
+          branchId,
+          notes: `Monthly platform subscription ₹${FINANCE_CONFIG.monthlyPlatformFeeRs} for branch ${branchId} ${monthKey}`,
+        });
+      } catch (err) {
+        if (!(err && err.code === 11000)) {
+          log.error({ err: err?.message, restaurantId: rid, branchId, monthKey }, 'settlement.platform_fee.debit_failed');
+        }
+      }
     }
     if (platformFeeGstPaise > 0) {
       try {
@@ -213,19 +267,26 @@ async function executeSettlement(restaurantId, { trigger = 'manual', payout_mode
           restaurantId: rid,
           amountPaise: platformFeeGstPaise,
           refType: 'platform_fee_gst',
-          refId: `${monthRefId}:gst`,
+          refId: `${branchId}:${monthKey}:gst`,
           status: 'completed',
-          notes: `GST ${FINANCE_CONFIG.gstPlatformFeePct}% on platform subscription for ${monthKey}`,
+          branchId,
+          notes: `GST ${FINANCE_CONFIG.gstPlatformFeePct}% on platform subscription for branch ${branchId} ${monthKey}`,
         });
       } catch (err) {
-        log.error({ err: err?.message, restaurantId: rid, monthKey }, 'settlement.platform_fee_gst.debit_failed');
+        if (!(err && err.code === 11000)) {
+          log.error({ err: err?.message, restaurantId: rid, branchId, monthKey }, 'settlement.platform_fee_gst.debit_failed');
+        }
       }
     }
   }
 
-  // Re-read the balance now that the platform fee debit (if any) has
-  // landed. ledger.debit is idempotent per month, so a replay returns the
-  // existing entry without changing balance — recalc is still correct.
+  const billedBranchCount = snapshotRows.length;
+  const platformFeeTotalPaise = billedBranchCount * platformFeePaise;
+  const platformFeeGstTotalPaise = billedBranchCount * platformFeeGstPaise;
+
+  // Re-read the balance now that the per-branch fee debits have landed.
+  // ledger.debit is idempotent per branch-month, so a replay returns the
+  // existing entries without changing balance — recalc is still correct.
   const postFeeCalc = await calculateSettlement(rid);
 
   // Meta (WhatsApp marketing) cost deduction. Frozen at settlement-row
@@ -302,11 +363,14 @@ async function executeSettlement(restaurantId, { trigger = 'manual', payout_mode
     return { skipped: true, reason: 'no_fund_account' };
   }
 
-  // Insert the settlement row up-front so idempotency is enforced
-  // by the next concurrent caller even mid-flight.
-  const settlementId = newId();
-  const now = new Date();
-  await col(COLLECTION).insertOne({
+  // Atomic idempotency. A single findOneAndUpdate upsert is the in-flight
+  // guard (replaces the old non-atomic findOne-then-insert race). The
+  // filter matches any existing processing/pending_manual_payout Phase 5
+  // row for this tenant: if one exists $setOnInsert no-ops and
+  // updatedExisting=true → bail with the existing row; otherwise the new
+  // row is inserted with status 'processing'. The uq_in_flight_settlement
+  // partial unique index is the second line of defense (E11000 → inflight).
+  const newRow = {
     _id: settlementId,
     restaurant_id: rid,
     settlement_type: 'new',           // disambiguates from legacy weekly rows
@@ -317,20 +381,18 @@ async function executeSettlement(restaurantId, { trigger = 'manual', payout_mode
     net_amount_paise:     amount,     // amount actually payable now
     // Rupee mirror of net_amount_paise — calculateTDS aggregates
     // settlements.net_payout_rs across the FY to detect the ₹5L threshold.
-    // Without this field, Phase 5 rows are invisible to TDS computation
-    // and the threshold is never crossed.
     net_payout_rs:        round2(amount / 100),
     total_amount_paise:   amount,     // alias, back-compat with prior turn
-    // Platform fee snapshot — captured at settlement-row creation so the
-    // export and audit trail show the exact amounts debited this cycle.
-    // Both paise (canonical) and rs (display) forms — settlement-export
-    // already reads platform_fee_rs / platform_fee_gst_rs.
-    platform_fee_paise:     platformFeeWaived ? 0 : platformFeePaise,
-    platform_fee_gst_paise: platformFeeWaived ? 0 : platformFeeGstPaise,
-    platform_fee_rs:        platformFeeWaived ? 0 : (platformFeePaise / 100),
-    platform_fee_gst_rs:    platformFeeWaived ? 0 : (platformFeeGstPaise / 100),
-    platform_fee_month:     monthKey,
-    platform_fee_waived:    platformFeeWaived,
+    // Platform fee snapshot — now the SUM across all branches billed this
+    // cycle (per-branch ₹3,540 × billedBranchCount). branch_count added so
+    // the export can show per-branch vs total. No first-month waiver.
+    platform_fee_paise:        platformFeeTotalPaise,
+    platform_fee_gst_paise:    platformFeeGstTotalPaise,
+    platform_fee_rs:           platformFeeTotalPaise / 100,
+    platform_fee_gst_rs:       platformFeeGstTotalPaise / 100,
+    platform_fee_month:        monthKey,
+    platform_fee_waived:       false,
+    platform_fee_branch_count: billedBranchCount,
     // TDS snapshot — captured at settlement-row creation. Settlement-export
     // already reads tds_amount_rs / tds_rate_pct / tds_section.
     tds_applicable:         tds.applicable,
@@ -349,16 +411,40 @@ async function executeSettlement(restaurantId, { trigger = 'manual', payout_mode
     trigger,
     // Meta marketing cost — frozen snapshot of unsettled message_ids and
     // their paise total at the moment this settlement row was created.
-    // marketing_messages rows get settled=true + settlement_id only once
-    // the payout succeeds (confirmPayout). A failed payout leaves them
-    // unsettled so the next settlement picks them up again.
     meta_cost_total_paise: meta.totalPaise,
     meta_message_count: meta.count,
     meta_message_ids: meta.ids,
     created_at: now,
     processed_at: null,
     failure_reason: null,
-  });
+  };
+
+  const inflightFilter = {
+    restaurant_id: rid,
+    settlement_type: 'new',
+    status: { $in: ['processing', 'pending_manual_payout'] },
+  };
+  let upsertRes;
+  try {
+    upsertRes = await col(COLLECTION).findOneAndUpdate(
+      inflightFilter,
+      { $setOnInsert: newRow },
+      { upsert: true, returnDocument: 'after', includeResultMetadata: true },
+    );
+  } catch (err) {
+    if (err && err.code === 11000) {
+      // uq_in_flight_settlement tripped — a concurrent run won the race.
+      const existing = await col(COLLECTION).findOne(inflightFilter);
+      log.warn({ restaurantId: rid, settlementId: existing?._id }, 'settlement.skip.inflight');
+      return { skipped: true, reason: 'inflight', settlement_id: existing?._id };
+    }
+    throw err;
+  }
+  if (upsertRes && upsertRes.lastErrorObject && upsertRes.lastErrorObject.updatedExisting) {
+    const existing = upsertRes.value;
+    log.warn({ restaurantId: rid, settlementId: existing?._id, status: existing?.status }, 'settlement.skip.inflight');
+    return { skipped: true, reason: 'inflight', settlement_id: existing?._id };
+  }
 
   // Manual mode: skip the provider loop. Reserve a synthetic payout_id
   // so confirmPayout/failPayout (keyed by payout_id) can address this

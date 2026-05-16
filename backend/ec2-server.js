@@ -590,6 +590,17 @@ connect().then(() => {
   const { scheduleRecovery } = require('./src/jobs/recovery');
   scheduleRecovery();
 
+  // Branch billing snapshot — midnight IST on day 1 of each month.
+  // Freezes the active-branch set so Phase 5 settlement bills the month
+  // it was active in, not "whoever is active at settlement time".
+  const branchSnapshot = require('./src/jobs/branchSnapshot');
+  branchSnapshot.schedule();
+
+  // Auto-settlement — Mon + Thu 06:00 IST. Drains each approved
+  // restaurant's ledger balance via Phase 5 executeSettlement.
+  const scheduledSettlements = require('./src/jobs/scheduledSettlements');
+  scheduledSettlements.schedule();
+
   // Template-status sync — daily 02:00 IST. Pulls Meta's APPROVED /
   // PAUSED / REJECTED state into the local templates collection so a
   // template paused by Meta surfaces in the dashboard within 24h instead

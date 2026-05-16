@@ -524,6 +524,14 @@ export default function BranchesSection() {
                     </div>
                   </div>
                   <div className="bcard-badges flex gap-2 flex-wrap justify-end items-center ml-auto">
+                    {b.subscription_status === 'pending_approval' && (
+                      <span
+                        className="badge ba text-xs"
+                        title="Branch onboarding is reviewed by an admin before it goes live"
+                      >
+                        ⏳ Pending admin approval
+                      </span>
+                    )}
                     {b.subscription_status === 'paused' && (
                       <>
                         <span

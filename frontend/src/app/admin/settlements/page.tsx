@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useToast } from '../../../components/Toast';
 import StatCard from '../../../components/StatCard';
 import SectionError from '../../../components/restaurant/analytics/SectionError';
@@ -9,19 +9,44 @@ import {
   getSettlements,
   getSettlementMetaBreakdown,
   downloadSettlementBlob,
-  runSettlement,
+  confirmSettlementPayout,
 } from '../../../api/admin';
 
 const STL_LIMIT = 50;
 
-interface BadgeMeta { bg: string; color: string; label: string }
+// Phase 5 rows carry `status`; legacy rows carry `payout_status`.
+// Normalize once so the badge + filters work across both shapes.
+function normStatus(s: SettlementRow): string {
+  return String(s.status || s.payout_status || '').toLowerCase();
+}
 
-const STATUS_BADGE: Record<string, BadgeMeta> = {
-  pending:    { bg: 'rgba(245,158,11,.16)',  color: 'var(--gb-amber-600)', label: 'Pending' },
-  processing: { bg: 'rgba(59,130,246,.16)',  color: 'var(--gb-blue-500)', label: 'Processing' },
-  completed:  { bg: 'rgba(34,197,94,.16)',   color: '#047857', label: 'Completed' },
-  failed:     { bg: 'rgba(239,68,68,.18)',   color: 'var(--gb-red-600)', label: 'Failed' },
+// status → Tailwind badge classes (replaces the prior runtime inline-style
+// palette map — the status set is finite so static classes are fine).
+const STATUS_BADGE: Record<string, { cls: string; label: string }> = {
+  pending_manual_payout: { cls: 'bg-amber-100 text-amber-800', label: 'Pending Payout' },
+  pending:               { cls: 'bg-amber-100 text-amber-800', label: 'Pending' },
+  processing:            { cls: 'bg-blue-100 text-blue-800',   label: 'Processing' },
+  completed:             { cls: 'bg-green-100 text-green-800', label: 'Completed' },
+  failed:                { cls: 'bg-red-100 text-red-800',     label: 'Failed' },
 };
+
+// Top filter buckets. Default = Pending Payout (the manual-transfer queue).
+const STATUS_FILTERS = [
+  { key: 'pending', label: 'Pending Payout' },
+  { key: 'completed', label: 'Completed' },
+  { key: 'failed', label: 'Failed' },
+  { key: 'all', label: 'All' },
+] as const;
+type StatusFilter = (typeof STATUS_FILTERS)[number]['key'];
+
+function matchesStatusFilter(s: SettlementRow, f: StatusFilter): boolean {
+  if (f === 'all') return true;
+  const st = normStatus(s);
+  if (f === 'pending') return st === 'pending_manual_payout';
+  if (f === 'completed') return st === 'completed';
+  if (f === 'failed') return st === 'failed';
+  return true;
+}
 
 interface AdminSettlementStats {
   total?: number;
@@ -42,14 +67,29 @@ interface SettlementRow {
   orders_count?: number;
   gross_revenue_rs?: number | string;
   platform_fee_rs?: number | string;
+  platform_fee_paise?: number;
+  platform_fee_gst_paise?: number;
+  platform_fee_branch_count?: number;
+  tds_amount_rs?: number | string;
   delivery_costs_rs?: number | string;
   refunds_rs?: number;
   meta_message_count?: number;
   meta_cost_total_paise?: number;
   net_payout_rs?: number | string;
+  status?: string;
   payout_status?: string;
+  payout_id?: string;
   rp_payout_id?: string;
+  settlement_type?: string;
   created_at?: string;
+  // Backend-enriched (GET /api/admin/settlements). null when the
+  // restaurant has no transferable bank account on record.
+  restaurant_bank_details?: {
+    account_holder_name?: string | null;
+    account_number?: string;
+    ifsc?: string;
+    bank_name?: string | null;
+  } | null;
 }
 
 interface SettlementsResponse {
@@ -80,6 +120,15 @@ interface BreakdownState {
   data: MetaBreakdownData | null;
 }
 
+interface MarkPaidState {
+  payoutId: string;
+  label: string; // restaurant + amount, for the modal header
+  utr: string;
+  notes: string;
+  submitting: boolean;
+  error: string | null;
+}
+
 function fmtCompact(n: number | string | null | undefined): string {
   const v = parseFloat(String(n)) || 0;
   if (v >= 1e7) return (v / 1e7).toFixed(1) + 'Cr';
@@ -102,6 +151,44 @@ function fmtTime(iso?: string): string {
   } catch { return '—'; }
 }
 
+// IST calendar date (YYYY-MM-DD) for the date-range presets. The backend
+// parses from/to as date strings (created_at $gte from / $lt to+1d), so
+// IST calendar boundaries are what we feed it. (Minor: the backend treats
+// these as UTC-midnight — inherent to its existing from/to handling, not
+// changed here; display filter only.)
+function istParts(d: Date): { y: number; m: number; day: number; dow: number } {
+  const s = new Date(d.getTime() + 5.5 * 3600 * 1000);
+  return { y: s.getUTCFullYear(), m: s.getUTCMonth(), day: s.getUTCDate(), dow: s.getUTCDay() };
+}
+function ymd(y: number, m: number, day: number): string {
+  return `${y}-${String(m + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+}
+type DatePreset = 'this_week' | 'last_2_weeks' | 'this_month' | 'last_month' | 'custom';
+function presetRange(preset: DatePreset): { from: string; to: string } {
+  const now = new Date();
+  const { y, m, day, dow } = istParts(now);
+  const todayUTC = Date.UTC(y, m, day);
+  const toStr = ymd(y, m, day);
+  if (preset === 'this_week') {
+    // Monday-anchored: dow 0=Sun..6=Sat → days since Monday.
+    const sinceMon = (dow + 6) % 7;
+    const mon = new Date(todayUTC - sinceMon * 86400000);
+    return { from: ymd(mon.getUTCFullYear(), mon.getUTCMonth(), mon.getUTCDate()), to: toStr };
+  }
+  if (preset === 'last_2_weeks') {
+    const start = new Date(todayUTC - 14 * 86400000);
+    return { from: ymd(start.getUTCFullYear(), start.getUTCMonth(), start.getUTCDate()), to: toStr };
+  }
+  if (preset === 'this_month') {
+    return { from: ymd(y, m, 1), to: toStr };
+  }
+  // last_month
+  const lm = m === 0 ? 11 : m - 1;
+  const lmy = m === 0 ? y - 1 : y;
+  const lastDay = new Date(Date.UTC(lmy, lm + 1, 0)).getUTCDate();
+  return { from: ymd(lmy, lm, 1), to: ymd(lmy, lm, lastDay) };
+}
+
 const TH_CLS = 'py-2.5 px-3 text-left text-xs text-dim uppercase font-bold tracking-[0.04em]';
 const TD_CLS = 'py-2 px-3 align-top';
 const EMPTY_CLS = 'p-6 text-center text-dim';
@@ -116,17 +203,18 @@ export default function AdminSettlementsPage() {
   const [listErr, setListErr] = useState<string | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [offset, setOffset] = useState<number>(0);
-  const [running, setRunning] = useState<boolean>(false);
-  const [confirmRun, setConfirmRun] = useState<boolean>(false);
 
   const [restaurantId, setRestaurantId] = useState<string>('');
-  const [fromDate, setFromDate] = useState<string>('');
-  const [toDate, setToDate] = useState<string>('');
-  const [status, setStatus] = useState<string>('');
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('pending');
+  const [datePreset, setDatePreset] = useState<DatePreset>('this_month');
+  const [customFrom, setCustomFrom] = useState<string>('');
+  const [customTo, setCustomTo] = useState<string>('');
 
   const [breakdown, setBreakdown] = useState<BreakdownState | null>(null);
   const [breakdownLoading, setBreakdownLoading] = useState<boolean>(false);
   const [breakdownErr, setBreakdownErr] = useState<string | null>(null);
+
+  const [markPaid, setMarkPaid] = useState<MarkPaidState | null>(null);
 
   const loadStats = useCallback(async () => {
     try {
@@ -139,13 +227,21 @@ export default function AdminSettlementsPage() {
     }
   }, []);
 
+  // Date range is server-side (created_at from/to — works for both row
+  // shapes). Status filtering is CLIENT-side: the backend `status` query
+  // param filters legacy `payout_status`, which Phase 5 rows don't carry.
   const loadList = useCallback(async () => {
     setLoading(true);
     const params: Record<string, string | number> = { limit: STL_LIMIT, offset };
-    if (status) params.status = status;
     if (restaurantId.trim()) params.restaurant_id = restaurantId.trim();
-    if (fromDate) params.from = fromDate;
-    if (toDate) params.to = toDate;
+    if (datePreset === 'custom') {
+      if (customFrom) params.from = customFrom;
+      if (customTo) params.to = customTo;
+    } else {
+      const { from, to } = presetRange(datePreset);
+      params.from = from;
+      params.to = to;
+    }
     try {
       const d = (await getSettlements(params)) as SettlementsResponse | null;
       setRows(Array.isArray(d?.settlements) ? d.settlements : []);
@@ -159,7 +255,7 @@ export default function AdminSettlementsPage() {
     } finally {
       setLoading(false);
     }
-  }, [offset, status, restaurantId, fromDate, toDate]);
+  }, [offset, restaurantId, datePreset, customFrom, customTo]);
 
   useEffect(() => { loadStats(); }, [loadStats]);
   useEffect(() => { loadList(); }, [loadList]);
@@ -167,19 +263,34 @@ export default function AdminSettlementsPage() {
   const page = Math.floor(offset / STL_LIMIT) + 1;
   const pages = Math.max(1, Math.ceil(total / STL_LIMIT));
 
-  const doRun = async () => {
-    if (!confirmRun) { setConfirmRun(true); return; }
-    setConfirmRun(false);
-    setRunning(true);
+  // Apply the client-side status filter, then group by restaurant
+  // preserving the backend's created_at-desc order within each group.
+  const grouped = useMemo(() => {
+    const filtered = rows.filter((s) => matchesStatusFilter(s, statusFilter));
+    const order: string[] = [];
+    const map = new Map<string, { name: string; rid: string; bank: SettlementRow['restaurant_bank_details']; items: SettlementRow[] }>();
+    for (const s of filtered) {
+      const rid = String(s.restaurant_id || 'unknown');
+      if (!map.has(rid)) {
+        map.set(rid, { name: s.business_name || '—', rid, bank: s.restaurant_bank_details ?? null, items: [] });
+        order.push(rid);
+      }
+      map.get(rid)!.items.push(s);
+    }
+    return order.map((rid) => map.get(rid)!);
+  }, [rows, statusFilter]);
+
+  const filteredCount = useMemo(
+    () => rows.filter((s) => matchesStatusFilter(s, statusFilter)).length,
+    [rows, statusFilter],
+  );
+
+  const copyValue = async (value: string, label: string) => {
     try {
-      await runSettlement();
-      showToast('Settlement started — refresh in a few seconds', 'success');
-      setTimeout(() => { loadStats(); loadList(); }, 3000);
-    } catch (e: unknown) {
-      const er = e as { response?: { data?: { error?: string } }; message?: string };
-      showToast(er?.response?.data?.error || er?.message || 'Run failed', 'error');
-    } finally {
-      setRunning(false);
+      await navigator.clipboard.writeText(value);
+      showToast(`Copied ${label}`, 'success');
+    } catch {
+      showToast('Copy failed', 'error');
     }
   };
 
@@ -223,6 +334,30 @@ export default function AdminSettlementsPage() {
     setBreakdownErr(null);
   };
 
+  const submitMarkPaid = async () => {
+    if (!markPaid) return;
+    const utr = markPaid.utr.trim();
+    if (!utr) {
+      setMarkPaid({ ...markPaid, error: 'UTR is required' });
+      return;
+    }
+    setMarkPaid({ ...markPaid, submitting: true, error: null });
+    try {
+      await confirmSettlementPayout(markPaid.payoutId, utr);
+      setMarkPaid(null);
+      showToast('Settlement marked paid', 'success');
+      loadStats();
+      loadList();
+    } catch (e: unknown) {
+      const er = e as { response?: { data?: { error?: string } }; message?: string };
+      setMarkPaid((prev) => prev && ({
+        ...prev,
+        submitting: false,
+        error: er?.response?.data?.error || er?.message || 'Mark-paid failed',
+      }));
+    }
+  };
+
   return (
     <div id="pg-settlements">
       {statsErr ? (
@@ -246,139 +381,232 @@ export default function AdminSettlementsPage() {
       )}
 
       <div className="mb-4 flex gap-3 items-center flex-wrap">
-        <button
-          type="button"
-          className="btn-p btn-sm py-2 px-5"
-          onClick={doRun}
-          disabled={running}
-        >
-          {running ? 'Running…' : confirmRun ? 'Confirm — Run Now' : 'Run Settlement Now'}
-        </button>
-        {confirmRun && (
-          <button type="button" className="btn-g btn-sm" onClick={() => setConfirmRun(false)}>Cancel</button>
-        )}
         <span className="text-sm text-dim">
-          Auto-runs every Monday 9:00 AM IST. Use this button for manual runs.
+          Settlements run automatically every Monday &amp; Thursday at 06:00 AM IST.
+          Per-restaurant manual runs are available via the admin API.
         </span>
       </div>
 
       <div className="card">
         <div className="ch justify-between flex-wrap gap-2">
           <h3 className="m-0">Settlement History</h3>
-          <span className="text-dim text-xs">{total} total</span>
-          <div className="ml-auto flex gap-2 flex-wrap">
+          <span className="text-dim text-xs">{filteredCount} shown · {total} total</span>
+          <div className="ml-auto flex gap-2 flex-wrap items-center">
+            {/* Status filter — client-side (see loadList note) */}
+            <div className="flex gap-1">
+              {STATUS_FILTERS.map((f) => (
+                <button
+                  key={f.key}
+                  type="button"
+                  className={`btn-sm py-1 px-3 rounded-md text-xs ${statusFilter === f.key ? 'btn-p' : 'btn-g'}`}
+                  onClick={() => setStatusFilter(f.key)}
+                >
+                  {f.label}
+                </button>
+              ))}
+            </div>
             <input
               value={restaurantId}
               onChange={(e) => { setRestaurantId(e.target.value); setOffset(0); }}
               placeholder="Restaurant ID"
-              className={`${INPUT_CLS} w-52`}
+              className={`${INPUT_CLS} w-44`}
             />
-            <input type="date" value={fromDate} onChange={(e) => { setFromDate(e.target.value); setOffset(0); }} className={INPUT_CLS} title="From" />
-            <input type="date" value={toDate}   onChange={(e) => { setToDate(e.target.value);   setOffset(0); }} className={INPUT_CLS} title="To" />
-            <select value={status} onChange={(e) => { setStatus(e.target.value); setOffset(0); }} className={INPUT_CLS}>
-              <option value="">All Statuses</option>
-              <option value="pending">Pending</option>
-              <option value="processing">Processing</option>
-              <option value="completed">Completed</option>
-              <option value="failed">Failed</option>
+            <select
+              value={datePreset}
+              onChange={(e) => { setDatePreset(e.target.value as DatePreset); setOffset(0); }}
+              className={INPUT_CLS}
+              title="Date range"
+            >
+              <option value="this_week">This Week</option>
+              <option value="last_2_weeks">Last 2 Weeks</option>
+              <option value="this_month">This Month</option>
+              <option value="last_month">Last Month</option>
+              <option value="custom">Custom Range</option>
             </select>
+            {datePreset === 'custom' && (
+              <>
+                <input type="date" value={customFrom} onChange={(e) => { setCustomFrom(e.target.value); setOffset(0); }} className={INPUT_CLS} title="From" />
+                <input type="date" value={customTo}   onChange={(e) => { setCustomTo(e.target.value);   setOffset(0); }} className={INPUT_CLS} title="To" />
+              </>
+            )}
             <button type="button" className="btn-g btn-sm" onClick={loadList} disabled={loading}>
               {loading ? 'Loading…' : '↻ Refresh'}
             </button>
           </div>
         </div>
+
+        {/* TODO: settlement detail view (future) — full per-settlement
+            ledger-debit breakdown (platform_fee/gst per branch, tds, payout)
+            + covered order-revenue window. Out of scope for this prompt. */}
+
         {listErr ? (
           <div className="cb"><SectionError message={listErr} onRetry={loadList} /></div>
+        ) : loading ? (
+          <div className={EMPTY_CLS}>Loading…</div>
+        ) : grouped.length === 0 ? (
+          <div className={EMPTY_CLS}>
+            No settlements match this filter. Auto-settlement runs every Monday &amp; Thursday at 06:00 IST.
+          </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full border-collapse text-sm">
-              <thead>
-                <tr className="bg-ink border-b border-rim">
-                  <th className={TH_CLS}>Restaurant</th>
-                  <th className={TH_CLS}>Period</th>
-                  <th className={TH_CLS}>Orders</th>
-                  <th className={TH_CLS}>Gross Revenue</th>
-                  <th className={TH_CLS}>Platform Fee</th>
-                  <th className={TH_CLS}>Delivery</th>
-                  <th className={TH_CLS}>Refunds</th>
-                  <th className={TH_CLS}>Meta Cost</th>
-                  <th className={TH_CLS}>Net Payout</th>
-                  <th className={TH_CLS}>Status</th>
-                  <th className={TH_CLS}>Payout ID</th>
-                  <th className={TH_CLS}>Created</th>
-                  <th className={TH_CLS}></th>
-                </tr>
-              </thead>
-              <tbody>
-                {loading ? (
-                  <tr><td colSpan={13} className={EMPTY_CLS}>Loading…</td></tr>
-                ) : rows.length === 0 ? (
-                  <tr><td colSpan={13} className={EMPTY_CLS}>No settlements yet. Click &quot;Run Settlement Now&quot; to generate.</td></tr>
-                ) : rows.map((s) => {
-                  const badge = STATUS_BADGE[s.payout_status || ''] || { bg: 'var(--ink3)', color: 'var(--dim)', label: s.payout_status || '' };
-                  const metaCount = s.meta_message_count || 0;
-                  const metaRs = (s.meta_cost_total_paise || 0) / 100;
-                  return (
-                    <tr key={s.id} className="border-b border-rim">
-                      <td className={TD_CLS}>
-                        <strong>{s.business_name}</strong>
-                        <div className="text-xs text-dim mono">
-                          {String(s.restaurant_id || '').slice(0, 8)}
-                        </div>
-                      </td>
-                      <td className={`${TD_CLS} text-sm whitespace-nowrap`}>
-                        {fmtDate(s.period_start)}<br />→ {fmtDate(s.period_end)}
-                      </td>
-                      <td className={`${TD_CLS} text-center`}>{s.orders_count}</td>
-                      <td className={TD_CLS}>₹{fmtCompact(s.gross_revenue_rs)}</td>
-                      <td className={`${TD_CLS} text-acc`}>₹{fmtCompact(s.platform_fee_rs)}</td>
-                      <td className={TD_CLS}>₹{fmtCompact(s.delivery_costs_rs)}</td>
-                      <td className={TD_CLS}>
-                        {s.refunds_rs && s.refunds_rs > 0
-                          ? <span className="text-red-500">₹{fmtCompact(s.refunds_rs)}</span>
-                          : '—'}
-                      </td>
-                      <td className={TD_CLS}>
-                        {metaCount > 0 ? (
+          <div className="flex flex-col gap-5">
+            {grouped.map((g) => (
+              <div key={g.rid} className="border border-rim rounded-md overflow-hidden">
+                <div className="bg-ink py-2 px-3">
+                  <div className="flex items-baseline gap-2 flex-wrap">
+                    <strong className="text-sm">{g.name}</strong>
+                    <span className="text-xs text-dim mono">{g.rid.slice(0, 8)}</span>
+                    <span className="text-xs text-dim ml-auto">{g.items.length} settlement(s)</span>
+                  </div>
+                  {g.bank ? (
+                    <div className="mt-1.5 flex items-center gap-x-4 gap-y-1 flex-wrap text-xs">
+                      <span className="text-dim">
+                        Holder: <span className="font-medium">{g.bank.account_holder_name || '—'}</span>
+                      </span>
+                      <span className="text-dim flex items-center gap-1">
+                        A/C: <span className="font-medium mono">{g.bank.account_number || '—'}</span>
+                        {g.bank.account_number && (
                           <button
                             type="button"
-                            className="btn-g btn-sm py-1 px-2 text-xs text-red-600"
-                            onClick={() => openBreakdown(s.id)}
-                            title={`View ${metaCount} messages`}
+                            className="btn-g btn-sm py-0.5 px-1.5 text-xs"
+                            onClick={() => g.bank?.account_number && copyValue(g.bank.account_number, 'account number')}
+                            title="Copy account number"
                           >
-                            ₹{fmtCompact(metaRs)} · {metaCount}
+                            Copy
                           </button>
-                        ) : <span className="text-dim">—</span>}
-                      </td>
-                      <td className={TD_CLS}><strong>₹{fmtCompact(s.net_payout_rs)}</strong></td>
-                      <td className={TD_CLS}>
-                        {/* Dynamic: bg/color come from a runtime palette map keyed by payout_status. */}
-                        <span
-                          className="inline-block py-0.5 px-2 rounded-r font-semibold text-xs capitalize"
-                          style={{ background: badge.bg, color: badge.color }}
-                        >{badge.label}</span>
-                      </td>
-                      <td className={`${TD_CLS} text-xs text-dim mono`}>
-                        {s.rp_payout_id ? `${s.rp_payout_id.slice(0, 14)}…` : '—'}
-                      </td>
-                      <td className={`${TD_CLS} text-dim text-xs`}>{fmtTime(s.created_at)}</td>
-                      <td className={TD_CLS}>
-                        <button
-                          type="button"
-                          className="btn-g btn-sm py-1 px-2 text-xs"
-                          onClick={() => doDownload(s.id)}
-                          title="Download Excel"
-                        >
-                          Excel
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+                        )}
+                      </span>
+                      <span className="text-dim flex items-center gap-1">
+                        IFSC: <span className="font-medium mono">{g.bank.ifsc || '—'}</span>
+                        {g.bank.ifsc && (
+                          <button
+                            type="button"
+                            className="btn-g btn-sm py-0.5 px-1.5 text-xs"
+                            onClick={() => g.bank?.ifsc && copyValue(g.bank.ifsc, 'IFSC')}
+                            title="Copy IFSC"
+                          >
+                            Copy
+                          </button>
+                        )}
+                      </span>
+                      {g.bank.bank_name && (
+                        <span className="text-dim">Bank: <span className="font-medium">{g.bank.bank_name}</span></span>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="mt-1.5 inline-block bg-amber-100 text-amber-800 text-xs py-1 px-2 rounded">
+                      ⚠ Bank details not configured for this restaurant. Cannot mark settlements paid until bank info is added.
+                    </div>
+                  )}
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full border-collapse text-sm">
+                    <thead>
+                      <tr className="border-b border-rim">
+                        <th className={TH_CLS}>Date</th>
+                        <th className={TH_CLS}>Status</th>
+                        <th className={TH_CLS}>Gross Revenue</th>
+                        <th className={TH_CLS}>Refunds</th>
+                        <th className={TH_CLS}>Platform Fee</th>
+                        <th className={TH_CLS}>TDS</th>
+                        <th className={TH_CLS}>Meta Cost</th>
+                        <th className={TH_CLS}>Net Payable</th>
+                        <th className={TH_CLS}></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {g.items.map((s) => {
+                        const st = normStatus(s);
+                        const badge = STATUS_BADGE[st] || { cls: 'bg-neutral-200 text-neutral-700', label: st || '—' };
+                        const metaCount = s.meta_message_count || 0;
+                        const metaRs = (s.meta_cost_total_paise || 0) / 100;
+                        const branchCount = s.platform_fee_branch_count || 0;
+                        const feeRs = parseFloat(String(s.platform_fee_rs)) || ((s.platform_fee_paise || 0) / 100);
+                        const gstRs = (s.platform_fee_gst_paise || 0) / 100;
+                        const isPendingPayout = st === 'pending_manual_payout' && !!s.payout_id;
+                        const hasBank = !!s.restaurant_bank_details;
+                        return (
+                          <tr key={s.id} className="border-b border-rim">
+                            <td className={`${TD_CLS} text-dim text-xs whitespace-nowrap`}>{fmtTime(s.created_at)}</td>
+                            <td className={TD_CLS}>
+                              <span className={`inline-block py-0.5 px-2 rounded font-semibold text-xs ${badge.cls}`}>
+                                {badge.label}
+                              </span>
+                            </td>
+                            <td className={TD_CLS}>₹{fmtCompact(s.gross_revenue_rs)}</td>
+                            <td className={TD_CLS}>
+                              {s.refunds_rs && s.refunds_rs > 0
+                                ? <span className="text-red-500">₹{fmtCompact(s.refunds_rs)}</span>
+                                : '—'}
+                            </td>
+                            <td className={`${TD_CLS} text-acc`}>
+                              {feeRs > 0 ? (
+                                <span title={gstRs > 0 ? `Fee ₹${feeRs.toFixed(2)} + GST ₹${gstRs.toFixed(2)}` : undefined}>
+                                  ₹{fmtCompact(feeRs)}
+                                  {branchCount > 1 && (
+                                    <span className="text-dim text-xs"> ({branchCount} branches × ₹3,000)</span>
+                                  )}
+                                </span>
+                              ) : '—'}
+                            </td>
+                            <td className={TD_CLS}>
+                              {s.tds_amount_rs && parseFloat(String(s.tds_amount_rs)) > 0
+                                ? `₹${fmtCompact(s.tds_amount_rs)}`
+                                : '—'}
+                            </td>
+                            <td className={TD_CLS}>
+                              {metaCount > 0 ? (
+                                <button
+                                  type="button"
+                                  className="btn-g btn-sm py-1 px-2 text-xs text-red-600"
+                                  onClick={() => openBreakdown(s.id)}
+                                  title={`View ${metaCount} messages`}
+                                >
+                                  ₹{fmtCompact(metaRs)} · {metaCount}
+                                </button>
+                              ) : <span className="text-dim">—</span>}
+                            </td>
+                            <td className={TD_CLS}><strong>₹{fmtCompact(s.net_payout_rs)}</strong></td>
+                            <td className={TD_CLS}>
+                              <div className="flex gap-1.5 justify-end">
+                                {isPendingPayout && (
+                                  <button
+                                    type="button"
+                                    className="btn-p btn-sm py-1 px-2 text-xs disabled:opacity-50 disabled:cursor-not-allowed"
+                                    disabled={!hasBank}
+                                    title={hasBank ? undefined : 'Restaurant bank details required to mark paid.'}
+                                    onClick={() => hasBank && setMarkPaid({
+                                      payoutId: String(s.payout_id),
+                                      label: `${g.name} · ₹${fmtCompact(s.net_payout_rs)}`,
+                                      utr: '',
+                                      notes: '',
+                                      submitting: false,
+                                      error: null,
+                                    })}
+                                  >
+                                    Mark Paid
+                                  </button>
+                                )}
+                                <button
+                                  type="button"
+                                  className="btn-g btn-sm py-1 px-2 text-xs"
+                                  onClick={() => doDownload(s.id)}
+                                  title="Download Excel"
+                                >
+                                  Excel
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            ))}
           </div>
         )}
+
         {total > 0 && (
           <div className="cb flex gap-2.5 items-center justify-center">
             <button
@@ -404,6 +632,69 @@ export default function AdminSettlementsPage() {
           </div>
         )}
       </div>
+
+      {markPaid && (
+        <div
+          onClick={() => !markPaid.submitting && setMarkPaid(null)}
+          className="fixed inset-0 bg-black/55 flex items-center justify-center z-1000 p-6"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="bg-neutral-0 rounded-r w-[min(440px,100%)] py-5 px-6 relative"
+          >
+            <button
+              type="button"
+              onClick={() => !markPaid.submitting && setMarkPaid(null)}
+              className="absolute top-2.5 right-3 bg-transparent border-0 text-[1.4rem] cursor-pointer text-dim"
+              aria-label="Close"
+            >
+              ×
+            </button>
+            <h2 className="m-0 mb-1 text-lg">Mark Settlement Paid</h2>
+            <div className="text-dim text-sm mb-4">{markPaid.label}</div>
+            <label className="block text-xs text-dim font-bold uppercase tracking-[0.04em] mb-1">
+              Bank UTR <span className="text-red-500">*</span>
+            </label>
+            <input
+              value={markPaid.utr}
+              onChange={(e) => setMarkPaid({ ...markPaid, utr: e.target.value, error: null })}
+              placeholder="e.g. SBIN0XXXXXXXXXX"
+              className={`${INPUT_CLS} w-full mb-3`}
+              autoFocus
+            />
+            <label className="block text-xs text-dim font-bold uppercase tracking-[0.04em] mb-1">
+              Notes <span className="text-dim normal-case font-normal">(optional)</span>
+            </label>
+            <textarea
+              value={markPaid.notes}
+              onChange={(e) => setMarkPaid({ ...markPaid, notes: e.target.value })}
+              rows={3}
+              className={`${INPUT_CLS} w-full mb-3 resize-y`}
+            />
+            {markPaid.error && (
+              <div className="text-red-600 text-sm mb-3">{markPaid.error}</div>
+            )}
+            <div className="flex gap-2 justify-end">
+              <button
+                type="button"
+                className="btn-g btn-sm"
+                onClick={() => setMarkPaid(null)}
+                disabled={markPaid.submitting}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="btn-p btn-sm"
+                onClick={submitMarkPaid}
+                disabled={markPaid.submitting}
+              >
+                {markPaid.submitting ? 'Saving…' : 'Confirm Paid'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {breakdown && (
         <div

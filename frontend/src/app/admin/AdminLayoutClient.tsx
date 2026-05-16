@@ -17,6 +17,7 @@ const NAV_ITEMS: NavItem[] = [
   { label: 'Campaign Tpls', icon: '✨',       path: '/admin/campaign-templates' },
   { label: 'Applications',  icon: '📝', path: '/admin/applications' },
   { label: 'Restaurants',   icon: '🏪', path: '/admin/restaurants' },
+  { label: 'Branch Approvals', icon: '✅', path: '/admin/branch-approvals' },
   { label: 'Cities',        icon: '🏙️', path: '/admin/cities' },
   { label: 'Tag Candidates', icon: '🏷️', path: '/admin/tag-candidates' },
   { label: 'Captain Logs',  icon: '📜', path: '/admin/captain-logs' },

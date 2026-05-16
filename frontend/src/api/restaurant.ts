@@ -938,30 +938,16 @@ export async function getImageStats(): Promise<unknown> {
 
 // ── Branches + Users ────────────────────────────────────────────────
 
-// Backend appends the first-month subscription Razorpay order to the
-// branch creation response. Frontend opens Checkout immediately, then
-// posts the signed payment back to /branches/:id/activate-subscription.
-export interface BranchRazorpayOrder {
-  id: string;
-  amount: number;
-  currency: string;
-  receipt?: string;
-}
-
-export type CreateBranchResponse = Branch & { razorpay_order?: BranchRazorpayOrder };
-
-export async function createBranch(body: RequestBody): Promise<CreateBranchResponse> {
-  const { data } = await client.post<CreateBranchResponse>('/api/restaurant/branches', body);
+// Branch onboarding is admin-gated: creation just returns the new
+// branch (subscription_status: 'pending_approval'), no payment step.
+export async function createBranch(body: RequestBody): Promise<Branch> {
+  const { data } = await client.post<Branch>('/api/restaurant/branches', body);
   return data;
 }
 
-export async function activateBranchSubscription(
-  branchId: string,
-  body: { razorpay_order_id: string; razorpay_payment_id: string; razorpay_signature: string },
-): Promise<Branch> {
-  const { data } = await client.post<Branch>(`/api/restaurant/branches/${branchId}/activate-subscription`, body);
-  return data;
-}
+// (Removed) activateBranchSubscription / BranchRazorpayOrder — branch
+// onboarding is admin-gated; the Razorpay branch-subscription flow and
+// its POST /branches/:id/activate-subscription endpoint were deleted.
 
 // Manual retry path for a branch the bi-monthly billing job paused
 // because the wallet was empty. Server-side: charges the wallet for

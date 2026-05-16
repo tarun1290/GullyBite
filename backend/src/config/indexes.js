@@ -22,6 +22,18 @@ const INDEXES = [
   { collection: 'settlements', index: { restaurant_id: 1, created_at: -1 } },
   { collection: 'settlements', index: { status: 1, created_at: -1 } },
   { collection: 'settlements', index: { payout_id: 1 }, options: { sparse: true } },
+  // Phase 5: at most one in-flight settlement per restaurant. Defense-in-depth
+  // behind the application-level findOneAndUpdate upsert in executeSettlement —
+  // closes the race window if two runs interleave before the upsert lands.
+  // NOTE: $in inside partialFilterExpression requires MongoDB 3.6+ (Atlas is
+  // fine). ensureIndexes() swallows non-"already exists" creation errors, so a
+  // server too old to support this would silently lack the guard — the app
+  // upsert remains primary. Mirror of referral_link_requests partial pattern.
+  { collection: 'settlements', index: { restaurant_id: 1 }, options: { unique: true, name: 'uq_in_flight_settlement', partialFilterExpression: { status: { $in: ['processing', 'pending_manual_payout'] } } } },
+  // Phase 5: branch billing snapshots. _id is the natural unique key
+  // ('<branchId>:<monthKey>' or 'month:<monthKey>') — no extra unique index.
+  { collection: 'branch_billing_snapshots', index: { restaurant_id: 1, month_key: 1 }, options: { name: 'idx_rid_month' } },
+  { collection: 'branch_billing_snapshots', index: { month_key: 1, snapshot_at: -1 }, options: { name: 'idx_month_snapshot' } },
   { collection: 'branches', index: { restaurant_id: 1 } },
   { collection: 'menu_items', index: { restaurant_id: 1, branch_id: 1 } },
   { collection: 'menu_items', index: { branch_id: 1, is_available: 1 } },

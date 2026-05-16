@@ -10,19 +10,68 @@ import type { Branch } from '../../../types';
 const SETTLE_LIMIT = 10;
 const PAY_LIMIT = 15;
 
-const STATUS_CLS: Record<string, string> = { PAID: 'bg', PENDING: 'ba', PROCESSING: 'bb', FAILED: 'br' };
 const PAY_STATUS_CLS: Record<string, string> = { CAPTURED: 'bg', SUCCESS: 'bg', PENDING: 'ba', FAILED: 'br', REFUNDED: 'bv' };
+
+// IST offset shift idiom used across the codebase: shift epoch by +5:30 so
+// the UTC getters on the resulting Date read as IST wall-clock values.
+const IST_MS = 5.5 * 60 * 60 * 1000;
+
+type SettlePreset = 'this_week' | 'last_2_weeks' | 'this_month' | 'custom';
+
+const SETTLE_PRESETS: ReadonlyArray<readonly [SettlePreset, string]> = [
+  ['this_week', 'This Week'],
+  ['last_2_weeks', 'Last 2 Weeks'],
+  ['this_month', 'This Month'],
+];
+
+// Friendly, restaurant-facing status mapping. Normalizes the Phase 5
+// `status` enum and any legacy `payout_status` into one of three buckets.
+function settleStatusMeta(raw: string | undefined): { label: string; cls: string } {
+  const s = (raw || '').toLowerCase();
+  if (s === 'completed') return { label: 'Paid', cls: 'bg' };
+  if (s === 'failed') return { label: 'Issue — contact support', cls: 'br' };
+  // pending_manual_payout | processing | pending (legacy) → pending payout
+  return { label: 'Pending payout', cls: 'ba' };
+}
+
+// Returns the IST month-to-date / week boundaries as ISO strings the backend
+// can filter `created_at` against.
+function presetRange(preset: SettlePreset): { from: string; to: string } {
+  const nowMs = Date.now();
+  const ist = new Date(nowMs + IST_MS);
+  const toIso = new Date(nowMs).toISOString();
+  let fromIst: Date;
+  if (preset === 'last_2_weeks') {
+    fromIst = new Date(ist.getTime() - 14 * 24 * 60 * 60 * 1000);
+    fromIst.setUTCHours(0, 0, 0, 0);
+  } else if (preset === 'this_month') {
+    fromIst = new Date(Date.UTC(ist.getUTCFullYear(), ist.getUTCMonth(), 1, 0, 0, 0, 0));
+  } else {
+    // this_week → Monday 00:00 IST (getUTCDay on the shifted date is the IST weekday)
+    const dow = ist.getUTCDay(); // 0=Sun..6=Sat
+    const daysSinceMon = (dow + 6) % 7;
+    fromIst = new Date(ist.getTime() - daysSinceMon * 24 * 60 * 60 * 1000);
+    fromIst.setUTCHours(0, 0, 0, 0);
+  }
+  // Unshift the IST wall-clock boundary back to a real UTC instant.
+  return { from: new Date(fromIst.getTime() - IST_MS).toISOString(), to: toIso };
+}
+
+function settleDateDisplay(d: string | undefined): string {
+  if (!d) return '—';
+  const parsed = new Date(d);
+  if (Number.isNaN(parsed.getTime())) return '—';
+  return parsed.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+}
 
 interface Settlement {
   id: string;
-  period_start?: string;
-  period_end?: string;
-  gross_revenue?: number | string;
-  total_deductions?: number | string;
-  tds?: number | string;
-  net_payout?: number | string;
+  created_at?: string;
+  status?: string;
   payout_status?: string;
-  utr?: string;
+  net_payout_rs?: number | string;
+  platform_fee_rs?: number | string;
+  platform_fee_branch_count?: number;
 }
 
 interface SettlementsResponse {
@@ -58,6 +107,16 @@ interface SettlementsTableProps {
   onView: (id: string) => void;
 }
 
+const SETTLE_HEAD = (
+  <thead><tr><th>Settlement Date</th><th>Status</th><th>Net Payable</th><th>Platform Fee</th><th /></tr></thead>
+);
+
+function platformFeeDisplay(s: Settlement): string {
+  const fee = formatINR(s.platform_fee_rs);
+  const count = Number(s.platform_fee_branch_count) || 0;
+  return count > 1 ? `${fee} (${count} branches)` : fee;
+}
+
 function SettlementsTable({ settlementsQ, onView }: SettlementsTableProps) {
   const rows = settlementsQ.data?.settlements || [];
   if (settlementsQ.error) {
@@ -66,34 +125,32 @@ function SettlementsTable({ settlementsQ, onView }: SettlementsTableProps) {
   if (settlementsQ.loading && !settlementsQ.data) {
     return (
       <table>
-        <thead><tr><th>Period</th><th>Gross</th><th>Deductions</th><th>TDS</th><th>Net</th><th>Status</th><th>UTR</th><th /></tr></thead>
-        <tbody><tr><td colSpan={8} className="text-center p-5 text-dim">Loading…</td></tr></tbody>
+        {SETTLE_HEAD}
+        <tbody><tr><td colSpan={5} className="text-center p-5 text-dim">Loading…</td></tr></tbody>
       </table>
     );
   }
   if (!rows.length) {
     return (
       <table>
-        <thead><tr><th>Period</th><th>Gross</th><th>Deductions</th><th>TDS</th><th>Net</th><th>Status</th><th>UTR</th><th /></tr></thead>
-        <tbody><tr><td colSpan={8}><div className="empty"><div className="ei">💰</div><h3>No settlements yet</h3><p>Settlements appear after your first payout cycle</p></div></td></tr></tbody>
+        {SETTLE_HEAD}
+        <tbody><tr><td colSpan={5}><div className="empty"><div className="ei">💰</div><h3>No settlements yet</h3><p>Settlements appear after your first payout cycle</p></div></td></tr></tbody>
       </table>
     );
   }
   return (
     <table>
-      <thead><tr><th>Period</th><th>Gross</th><th>Deductions</th><th>TDS</th><th>Net</th><th>Status</th><th>UTR</th><th /></tr></thead>
+      {SETTLE_HEAD}
       <tbody>
         {rows.map((s) => {
-          const cls = STATUS_CLS[s.payout_status?.toUpperCase?.() || ''] || 'bd';
+          const { label, cls } = settleStatusMeta(s.status || s.payout_status);
+          const net = Math.round(Number(s.net_payout_rs) || 0);
           return (
             <tr key={s.id}>
-              <td className="text-sm">{s.period_start || ''} → {s.period_end || ''}</td>
-              <td>{formatINR(s.gross_revenue)}</td>
-              <td className="text-red">{formatINR(s.total_deductions)}</td>
-              <td>{formatINR(s.tds)}</td>
-              <td><strong>{formatINR(s.net_payout)}</strong></td>
-              <td><span className={`badge ${cls}`}>{s.payout_status || 'N/A'}</span></td>
-              <td className="text-xs text-dim font-mono">{s.utr || '—'}</td>
+              <td className="text-sm">{settleDateDisplay(s.created_at)}</td>
+              <td><span className={`badge ${cls}`}>{label}</span></td>
+              <td>{net > 0 ? <strong>{formatINR(net)}</strong> : <span className="text-dim">No payout</span>}</td>
+              <td>{platformFeeDisplay(s)}</td>
               <td><button type="button" className="btn-g btn-sm" onClick={() => onView(s.id)}>View</button></td>
             </tr>
           );
@@ -199,10 +256,34 @@ export default function SettlementsSection() {
   const [settlePage, setSettlePage] = useState<number>(1);
   const [openId, setOpenId] = useState<string | null>(null);
 
+  const [settlePreset, setSettlePreset] = useState<SettlePreset>('this_week');
+  const [settleCustomFrom, setSettleCustomFrom] = useState<string>('');
+  const [settleCustomTo, setSettleCustomTo] = useState<string>('');
+  // Applied custom range — only updated via the Apply button so typing a
+  // partial date doesn't fire a request on every keystroke.
+  const [settleCustom, setSettleCustom] = useState<{ from: string; to: string }>({ from: '', to: '' });
+
   const settlementsQ = useAnalyticsFetch<SettlementsResponse | null>(
-    useCallback(() => getSettlements({ page: settlePage, limit: SETTLE_LIMIT }) as Promise<SettlementsResponse | null>, [settlePage]),
-    [settlePage],
+    useCallback(() => {
+      const params: Record<string, string | number> = { page: settlePage, limit: SETTLE_LIMIT };
+      if (settlePreset === 'custom') {
+        if (settleCustom.from) params.from = new Date(`${settleCustom.from}T00:00:00`).toISOString();
+        if (settleCustom.to) params.to = new Date(`${settleCustom.to}T23:59:59.999`).toISOString();
+      } else {
+        const { from, to } = presetRange(settlePreset);
+        params.from = from;
+        params.to = to;
+      }
+      return getSettlements(params) as Promise<SettlementsResponse | null>;
+    }, [settlePage, settlePreset, settleCustom.from, settleCustom.to]),
+    [settlePage, settlePreset, settleCustom.from, settleCustom.to],
   );
+
+  const applySettleCustom = () => {
+    setSettlePreset('custom');
+    setSettleCustom({ from: settleCustomFrom, to: settleCustomTo });
+    setSettlePage(1);
+  };
 
   const [payPage, setPayPage] = useState<number>(1);
   const [payFromInput, setPayFromInput] = useState<string>('');
@@ -249,7 +330,52 @@ export default function SettlementsSection() {
   return (
     <div>
       <div className="card mb-5">
-        <div className="ch"><h3>Settlements</h3></div>
+        <div className="ch">
+          <h3>Settlements</h3>
+          <div className="flex gap-1.5 items-center flex-wrap">
+            {SETTLE_PRESETS.map(([v, l]) => (
+              <button
+                key={v}
+                type="button"
+                className={settlePreset === v ? 'chip on' : 'chip'}
+                onClick={() => { setSettlePreset(v); setSettlePage(1); }}
+              >
+                {l}
+              </button>
+            ))}
+            <button
+              type="button"
+              id="fin-settle-custom-btn"
+              className={settlePreset === 'custom' ? 'chip on' : 'chip'}
+              onClick={() => { setSettlePreset('custom'); setSettlePage(1); }}
+            >
+              Custom Range
+            </button>
+            {settlePreset === 'custom' && (
+              <span className="flex items-center gap-1.5">
+                <input
+                  type="date"
+                  id="fin-settle-from"
+                  value={settleCustomFrom}
+                  onChange={(e) => setSettleCustomFrom(e.target.value)}
+                  className="text-xs py-1 px-2 border border-rim rounded-md"
+                />
+                <span className="text-xs text-dim">to</span>
+                <input
+                  type="date"
+                  id="fin-settle-to"
+                  value={settleCustomTo}
+                  onChange={(e) => setSettleCustomTo(e.target.value)}
+                  className="text-xs py-1 px-2 border border-rim rounded-md"
+                />
+                <button type="button" className="btn-p btn-sm" onClick={applySettleCustom}>Apply</button>
+              </span>
+            )}
+          </div>
+        </div>
+        <p className="text-sm text-dim px-5 pt-3">
+          Settlements run twice a week — Thursdays (covers Mon–Wed orders) and Mondays (covers Thu–Sun orders). Payouts are processed manually within 24 hours after each settlement.
+        </p>
         <div className="tbl">
           <SettlementsTable settlementsQ={settlementsQ} onView={setOpenId} />
         </div>

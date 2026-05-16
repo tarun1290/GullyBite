@@ -1,8 +1,9 @@
 'use client';
 
-import { useCallback, useEffect, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useState, type ChangeEvent, type FormEvent } from 'react';
 import StatCard from '../../../components/StatCard';
 import SectionError from '../../../components/restaurant/analytics/SectionError';
+import PendingApprovalNotice, { isPendingApproval } from '../../../components/restaurant/PendingApprovalNotice';
 import {
   sendDineInFeedback,
   getFeedbackStats,
@@ -10,7 +11,13 @@ import {
   resolveFeedbackEscalation,
   getReviewLinks,
   updateReviewLinks,
+  getBranches,
+  getRatings,
+  getRatingsSummary,
 } from '../../../api/restaurant';
+import type { Branch } from '../../../types';
+
+const PAGE_LIMIT = 20;
 
 interface BySourceBucket {
   avg?: number | string;
@@ -53,8 +60,99 @@ interface DineInBody {
   order_ref?: string;
 }
 
+// --- Ratings types (merged in from the former standalone ratings page) ---
+
+interface RatingComment {
+  comment?: string;
+  overall_rating?: number;
+  created_at?: string;
+}
+
+interface RatingsSummary {
+  total?: number;
+  avg_overall?: number | string;
+  avg_taste?: number | string;
+  avg_packing?: number | string;
+  avg_delivery?: number | string;
+  avg_value?: number | string;
+  recent_comments?: RatingComment[];
+}
+
+interface RatingRow {
+  id?: string;
+  order_number: string;
+  customer_name?: string;
+  branch_name?: string;
+  taste_rating?: number;
+  packing_rating?: number;
+  delivery_rating?: number;
+  value_rating?: number;
+  overall_rating?: number;
+  comment?: string;
+  created_at?: string;
+}
+
+interface RatingsListResponse {
+  total: number;
+  pages: number;
+  ratings: RatingRow[];
+}
+
 type Window = '30d' | 'all';
 type MsgState = { kind: 'ok' | 'err'; text: string } | null;
+
+function ratingColor(v: number | undefined | null): string {
+  const n = Number(v) || 0;
+  if (n >= 4) return 'var(--wa)';
+  if (n >= 3) return 'var(--gold)';
+  if (n > 0) return 'var(--red)';
+  return 'var(--dim)';
+}
+
+function RatingBadge({ value }: { value?: number | undefined }) {
+  return (
+    // colour from ratingColor() at runtime based on numeric rating
+    <span className="font-semibold" style={{ color: ratingColor(value) }}>
+      {value || '—'}
+    </span>
+  );
+}
+
+function formatDate(iso?: string): string {
+  if (!iso) return '—';
+  return new Date(iso).toLocaleDateString('en-IN', {
+    day: 'numeric',
+    month: 'short',
+    year: '2-digit',
+  });
+}
+
+function formatShortDate(iso?: string): string {
+  if (!iso) return '';
+  return new Date(iso).toLocaleDateString('en-IN', {
+    day: 'numeric',
+    month: 'short',
+  });
+}
+
+// Ratings-tab data, grouped so the Rating Overview signature stays tidy
+// under strict TS. All of this is sourced from the former ratings page's
+// API calls (getBranches / getRatingsSummary / getRatings) — unchanged.
+interface RatingsData {
+  branches: Branch[];
+  branchId: string;
+  onBranchChange: (e: ChangeEvent<HTMLSelectElement>) => void;
+  summary: RatingsSummary | null;
+  summaryLoading: boolean;
+  summaryErr: string | null;
+  onSummaryRetry: () => void;
+  list: RatingsListResponse | null;
+  listLoading: boolean;
+  listErr: string | null;
+  onListRetry: () => void;
+  page: number;
+  onPageChange: (p: number) => void;
+}
 
 interface RatingOverviewProps {
   stats: FeedbackStats | null;
@@ -63,14 +161,34 @@ interface RatingOverviewProps {
   onRetry: () => void;
   window: Window;
   onWindowChange: (w: Window) => void;
+  ratings: RatingsData;
 }
 
-function RatingOverview({ stats, loading, err, onRetry, window, onWindowChange }: RatingOverviewProps) {
-  if (err) return <SectionError message={err} onRetry={onRetry} />;
+function RatingOverview({ stats, loading, err, onRetry, window, onWindowChange, ratings }: RatingOverviewProps) {
   const bySource = stats?.by_source || {};
   const totalRatings = stats?.total_ratings || 0;
   const positive = stats?.positive_ratings || 0;
   const positivePct = totalRatings ? Math.round((positive / totalRatings) * 100) : 0;
+
+  const {
+    branches,
+    branchId,
+    onBranchChange,
+    summary,
+    summaryLoading,
+    summaryErr,
+    onSummaryRetry,
+    list,
+    listLoading,
+    listErr,
+    onListRetry,
+    page,
+    onPageChange,
+  } = ratings;
+
+  const summaryTotal = summary?.total ?? 0;
+  const showValue = (v: number | string): number | string => (summaryTotal ? v : '—');
+
   return (
     <div className="mb-4">
       <div className="card mb-4">
@@ -98,53 +216,235 @@ function RatingOverview({ stats, loading, err, onRetry, window, onWindowChange }
         </div>
       </div>
 
-      <div className="stats">
-        <StatCard
-          label="Average rating"
-          value={loading ? '—' : `${stats?.average_rating ?? 0} ⭐`}
-          delta={`${totalRatings} ratings`}
-        />
-        <StatCard
-          label="Positive (4–5⭐)"
-          value={loading ? '—' : positive.toLocaleString()}
-          delta={`${positivePct}% of replies`}
-        />
-        <StatCard
-          label="Review links sent"
-          value={loading ? '—' : (stats?.review_link_sent || 0).toLocaleString()}
-          delta="Positive ratings nudged"
-        />
-        <StatCard
-          label="Review clicks"
-          value={loading ? '—' : (stats?.review_link_clicks || 0).toLocaleString()}
-          delta={`${stats?.review_click_rate ?? 0}% click-through`}
-        />
+      {/* Detailed rating breakdown + branch filter (dedicated rating surface,
+          merged in from the former standalone ratings page). */}
+      <div className="card mb-4">
+        <div className="ch flex items-center gap-2.5 flex-wrap">
+          <h3 className="mr-auto">Customer Ratings</h3>
+          <label className="lbl m-0" htmlFor="rt-branch">Branch</label>
+          <select
+            id="rt-branch"
+            value={branchId}
+            onChange={onBranchChange}
+            className="min-w-[180px]"
+          >
+            <option value="">All branches</option>
+            {branches.map((b) => (
+              <option key={b.id} value={b.id}>{b.name}</option>
+            ))}
+          </select>
+        </div>
+
+        {summaryErr ? (
+          <div className="py-3">
+            <SectionError message={summaryErr} onRetry={onSummaryRetry} />
+          </div>
+        ) : (
+          <div className="stats">
+            <StatCard
+              label="Overall"
+              value={summaryLoading ? '—' : showValue(summary?.avg_overall ?? '—')}
+              delta="Average rating"
+            />
+            <StatCard
+              label="Taste"
+              value={summaryLoading ? '—' : showValue(summary?.avg_taste ?? '—')}
+              delta="Average rating"
+            />
+            <StatCard
+              label="Packaging"
+              value={summaryLoading ? '—' : showValue(summary?.avg_packing ?? '—')}
+              delta="Average rating"
+            />
+            <StatCard
+              label="Delivery"
+              value={summaryLoading ? '—' : showValue(summary?.avg_delivery ?? '—')}
+              delta="Average rating"
+            />
+            <StatCard
+              label="Value"
+              value={summaryLoading ? '—' : showValue(summary?.avg_value ?? '—')}
+              delta="Average rating"
+            />
+            <StatCard
+              label="Total Reviews"
+              value={summaryLoading ? '—' : (summary?.total || 0)}
+              delta="All ratings"
+            />
+          </div>
+        )}
       </div>
 
-      <div className="card mt-4">
-        <div className="ch"><h3>By source</h3></div>
-        <div
-          className="cb grid gap-2.5 grid-cols-[repeat(auto-fit,minmax(180px,1fr))]"
-        >
-          {(['delivery', 'dine_in'] as const).map((src) => (
+      {/* Review funnel (unique to feedback — the duplicate "Average rating"
+          card was removed in favour of the detailed breakdown above). */}
+      {err ? (
+        <SectionError message={err} onRetry={onRetry} />
+      ) : (
+        <>
+          <div className="stats">
+            <StatCard
+              label="Positive (4–5⭐)"
+              value={loading ? '—' : positive.toLocaleString()}
+              delta={`${positivePct}% of replies`}
+            />
+            <StatCard
+              label="Review links sent"
+              value={loading ? '—' : (stats?.review_link_sent || 0).toLocaleString()}
+              delta="Positive ratings nudged"
+            />
+            <StatCard
+              label="Review clicks"
+              value={loading ? '—' : (stats?.review_link_clicks || 0).toLocaleString()}
+              delta={`${stats?.review_click_rate ?? 0}% click-through`}
+            />
+          </div>
+
+          <div className="card mt-4">
+            <div className="ch"><h3>By source</h3></div>
             <div
-              key={src}
-              className="py-3 px-3 border border-rim rounded-r bg-panel"
+              className="cb grid gap-2.5 grid-cols-[repeat(auto-fit,minmax(180px,1fr))]"
             >
-              <div className="text-xs text-dim capitalize">
-                {src.replace('_', '-')}
-              </div>
-              <div className="mt-1">
-                <strong className="text-lg">
-                  {bySource[src]?.avg ?? '—'} ⭐
-                </strong>
-                <span className="ml-2 text-sm text-dim">
-                  {bySource[src]?.count || 0} ratings
+              {(['delivery', 'dine_in'] as const).map((src) => (
+                <div
+                  key={src}
+                  className="py-3 px-3 border border-rim rounded-r bg-panel"
+                >
+                  <div className="text-xs text-dim capitalize">
+                    {src.replace('_', '-')}
+                  </div>
+                  <div className="mt-1">
+                    <strong className="text-lg">
+                      {bySource[src]?.avg ?? '—'} ⭐
+                    </strong>
+                    <span className="ml-2 text-sm text-dim">
+                      {bySource[src]?.count || 0} ratings
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Recent comments + full ratings table (merged from former ratings page) */}
+      <div className="card mt-4 mb-4">
+        <div className="ch">
+          <h3>Recent Comments</h3>
+        </div>
+        <div id="rt-comments">
+          {summaryLoading ? (
+            <span className="text-dim">Loading…</span>
+          ) : summary?.recent_comments?.length ? (
+            summary.recent_comments.map((c, i) => (
+              <div
+                key={i}
+                className="py-2 border-b border-rim"
+              >
+                {/* colour from ratingColor() at runtime based on numeric rating */}
+                <span className="font-semibold" style={{ color: ratingColor(c.overall_rating || 0) }}>
+                  {c.overall_rating || 0}⭐
+                </span>{' '}
+                <span>{c.comment || ''}</span>{' '}
+                <span className="text-dim text-xs float-right">
+                  {formatShortDate(c.created_at)}
                 </span>
               </div>
-            </div>
-          ))}
+            ))
+          ) : (
+            <span className="text-mute">No comments yet</span>
+          )}
         </div>
+      </div>
+
+      <div className="card">
+        <div className="ch">
+          <h3>All Ratings</h3>
+          <span id="rt-count" className="text-dim text-sm">
+            {list ? `${list.total} total` : ''}
+          </span>
+        </div>
+
+        {listErr ? (
+          <SectionError message={listErr} onRetry={onListRetry} />
+        ) : (
+          <div className="tbl">
+            <table>
+              <thead>
+                <tr>
+                  <th>Order</th>
+                  <th>Customer</th>
+                  <th>Branch</th>
+                  <th className="text-center">Taste</th>
+                  <th className="text-center">Packing</th>
+                  <th className="text-center">Delivery</th>
+                  <th className="text-center">Value</th>
+                  <th className="text-center">Overall</th>
+                  <th>Comment</th>
+                  <th>Date</th>
+                </tr>
+              </thead>
+              <tbody id="rt-tbody">
+                {listLoading ? (
+                  <tr>
+                    <td colSpan={10} className="text-center p-8 text-dim">
+                      Loading…
+                    </td>
+                  </tr>
+                ) : !list?.ratings?.length ? (
+                  <tr>
+                    <td colSpan={10} className="text-center p-8 text-dim">
+                      No ratings yet. Ratings will appear here after customers rate their orders.
+                    </td>
+                  </tr>
+                ) : (
+                  list.ratings.map((r, i) => (
+                    <tr key={r.id || `${r.order_number}-${i}`} className="border-b border-rim">
+                      <td><span className="mono">#{r.order_number}</span></td>
+                      <td>{r.customer_name || ''}</td>
+                      <td>{r.branch_name}</td>
+                      <td className="text-center"><RatingBadge value={r.taste_rating} /></td>
+                      <td className="text-center"><RatingBadge value={r.packing_rating} /></td>
+                      <td className="text-center"><RatingBadge value={r.delivery_rating} /></td>
+                      <td className="text-center"><RatingBadge value={r.value_rating} /></td>
+                      <td className="text-center"><RatingBadge value={r.overall_rating} /></td>
+                      <td
+                        className="max-w-[200px] overflow-hidden text-ellipsis whitespace-nowrap"
+                        title={r.comment || ''}
+                      >
+                        {r.comment || <span className="text-mute">—</span>}
+                      </td>
+                      <td className="text-dim">{formatDate(r.created_at)}</td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {list && list.pages > 1 && (
+          <div
+            id="rt-pager"
+            className="flex gap-1 flex-wrap mt-3"
+          >
+            {Array.from({ length: list.pages }, (_, i) => i + 1).map((p) => {
+              const active = p === page;
+              const borderCls = active ? 'border border-acc' : 'border border-rim';
+              const bgCls = active ? 'bg-acc text-white' : 'bg-white text-tx';
+              return (
+                <button
+                  key={p}
+                  type="button"
+                  onClick={() => onPageChange(p)}
+                  className={`py-1 px-2.5 rounded-r cursor-pointer text-xs ${borderCls} ${bgCls}`}
+                >
+                  {p}
+                </button>
+              );
+            })}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -437,7 +737,7 @@ function ReviewLinksSettings({ links, onSave }: ReviewLinksSettingsProps) {
   );
 }
 
-export default function FeedbackPage() {
+export default function ReputationPage() {
   const [window, setWindow] = useState<Window>('30d');
   const [stats, setStats] = useState<FeedbackStats | null>(null);
   const [statsErr, setStatsErr] = useState<string | null>(null);
@@ -449,6 +749,19 @@ export default function FeedbackPage() {
   const [escLoading, setEscLoading] = useState<boolean>(true);
 
   const [links, setLinks] = useState<ReviewLinks | null>(null);
+
+  // --- Ratings state (merged in from the former standalone ratings page) ---
+  const [branches, setBranches] = useState<Branch[]>([]);
+  const [branchId, setBranchId] = useState<string>('');
+  const [page, setPage] = useState<number>(1);
+
+  const [summary, setSummary] = useState<RatingsSummary | null>(null);
+  const [summaryErr, setSummaryErr] = useState<string | null>(null);
+  const [summaryLoading, setSummaryLoading] = useState<boolean>(true);
+
+  const [list, setList] = useState<RatingsListResponse | null>(null);
+  const [listErr, setListErr] = useState<string | null>(null);
+  const [listLoading, setListLoading] = useState<boolean>(true);
 
   const loadStats = useCallback(async () => {
     setStatsLoading(true);
@@ -488,9 +801,52 @@ export default function FeedbackPage() {
     }
   }, []);
 
+  const loadBranches = useCallback(async () => {
+    try {
+      const br = await getBranches();
+      setBranches(Array.isArray(br) ? br : []);
+    } catch {
+      setBranches([]);
+    }
+  }, []);
+
+  const loadSummary = useCallback(async () => {
+    setSummaryLoading(true);
+    setSummaryErr(null);
+    try {
+      const params = branchId ? { branch_id: branchId } : {};
+      const data = (await getRatingsSummary(params)) as RatingsSummary | null;
+      setSummary(data || null);
+    } catch (err: unknown) {
+      const e = err as { response?: { data?: { error?: string } }; userMessage?: string; message?: string };
+      setSummaryErr(e?.response?.data?.error || e?.userMessage || e?.message || 'Could not load summary');
+    } finally {
+      setSummaryLoading(false);
+    }
+  }, [branchId]);
+
+  const loadList = useCallback(async () => {
+    setListLoading(true);
+    setListErr(null);
+    try {
+      const params: Record<string, string | number> = { page, limit: PAGE_LIMIT };
+      if (branchId) params.branch_id = branchId;
+      const data = (await getRatings(params)) as RatingsListResponse | null;
+      setList(data || null);
+    } catch (err: unknown) {
+      const e = err as { response?: { data?: { error?: string } }; userMessage?: string; message?: string };
+      setListErr(e?.response?.data?.error || e?.userMessage || e?.message || 'Could not load ratings');
+    } finally {
+      setListLoading(false);
+    }
+  }, [branchId, page]);
+
   useEffect(() => { loadStats(); }, [loadStats]);
   useEffect(() => { loadEscalations(); }, [loadEscalations]);
   useEffect(() => { loadLinks(); }, [loadLinks]);
+  useEffect(() => { loadBranches(); }, [loadBranches]);
+  useEffect(() => { loadSummary(); }, [loadSummary]);
+  useEffect(() => { loadList(); }, [loadList]);
 
   async function handleSend(body: DineInBody) {
     await sendDineInFeedback({ ...body });
@@ -506,10 +862,25 @@ export default function FeedbackPage() {
     setLinks(next);
   }
 
+  function handleBranchChange(e: ChangeEvent<HTMLSelectElement>) {
+    setBranchId(e.target.value);
+    setPage(1);
+  }
+
+  // Page-level pending-approval gate (carried over from the former ratings
+  // page) — shown above the tabs before any reputation data is rendered.
+  if (isPendingApproval(summaryErr) || isPendingApproval(listErr) || isPendingApproval(statsErr)) {
+    return (
+      <div id="tab-reputation" className="tab on">
+        <PendingApprovalNotice feature="Reputation" />
+      </div>
+    );
+  }
+
   return (
-    <div id="tab-feedback" className="tab on">
+    <div id="tab-reputation" className="tab on">
       <div className="mb-4">
-        <h2 className="m-0">Feedback</h2>
+        <h2 className="m-0">Reputation</h2>
         <div className="text-sm text-dim mt-1">
           Every rating from delivery and dine-in, plus the review funnel that follows.
         </div>
@@ -522,6 +893,21 @@ export default function FeedbackPage() {
         onRetry={loadStats}
         window={window}
         onWindowChange={setWindow}
+        ratings={{
+          branches,
+          branchId,
+          onBranchChange: handleBranchChange,
+          summary,
+          summaryLoading,
+          summaryErr,
+          onSummaryRetry: loadSummary,
+          list,
+          listLoading,
+          listErr,
+          onListRetry: loadList,
+          page,
+          onPageChange: setPage,
+        }}
       />
 
       <EscalationInbox

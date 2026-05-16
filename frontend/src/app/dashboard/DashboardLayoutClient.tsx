@@ -27,15 +27,12 @@ const NAV_ITEMS: NavItem[] = [
   { label: 'Campaigns',           icon: '✨', path: '/dashboard/campaigns' },
   { label: 'Analytics',           icon: '📊', path: '/dashboard/analytics' },
   { label: 'Marketing Analytics', icon: '📈', path: '/dashboard/marketing-analytics' },
-  { label: 'Ratings',             icon: '⭐', path: '/dashboard/ratings' },
-  { label: 'Feedback',            icon: '💬', path: '/dashboard/feedback' },
+  { label: 'Reputation',          icon: '⭐', path: '/dashboard/reputation' },
   { label: 'Loyalty',             icon: '🎖', path: '/dashboard/loyalty' },
   { label: 'Dine-in',             icon: '🍽', path: '/dashboard/dine-in' },
   { label: 'Customers',           icon: '👥', path: '/dashboard/customers' },
   { label: 'Payments',            icon: '💰', path: '/dashboard/payments' },
-  { label: 'Penalties',           icon: '⚠️', path: '/dashboard/penalties' },
   { label: 'Settings',            icon: '⚙', path: '/dashboard/settings' },
-  { label: 'Restaurant',          icon: '🏪', path: '/dashboard/restaurant' },
 ];
 
 // Captain surfaces — only shown when WhatsApp is connected, since the

@@ -607,6 +607,20 @@ export async function getSettlementMetaBreakdown(id: string): Promise<unknown> {
   return data;
 }
 
+// Mark a pending_manual_payout settlement as paid. Backend expects
+// { payout_id, external_reference } — external_reference is the bank UTR.
+// (POST /api/admin/settlements/confirm — route predates this UI.)
+export async function confirmSettlementPayout(
+  payoutId: string,
+  externalReference: string,
+): Promise<unknown> {
+  const { data } = await client.post('/api/admin/settlements/confirm', {
+    payout_id: payoutId,
+    external_reference: externalReference,
+  });
+  return data;
+}
+
 export async function downloadSettlementBlob(id: string): Promise<BlobDownload> {
   const res: AxiosResponse<Blob> = await client.get<Blob>(`/api/admin/settlements/${id}/download`, {
     responseType: 'blob',
@@ -614,10 +628,8 @@ export async function downloadSettlementBlob(id: string): Promise<BlobDownload> 
   return { blob: res.data, headers: res.headers };
 }
 
-export async function runSettlement(): Promise<unknown> {
-  const { data } = await client.post('/api/admin/run-settlement');
-  return data;
-}
+// (Removed) runSettlement() → POST /api/admin/run-settlement. The legacy
+// cross-tenant trigger was deleted; auto-settlement runs Mon+Thu server-side.
 
 // ── Financials ──────────────────────────────────────────────────────
 
@@ -965,6 +977,21 @@ export async function getLogisticsAnalytics(params: QueryParams = {}): Promise<u
 export async function getAdminBranches(restaurantId: string): Promise<unknown> {
   const { data } = await client.get('/api/admin/branches', {
     params: { restaurant_id: restaurantId },
+  });
+  return data;
+}
+
+export async function approveBranch(branchId: string, notes?: string): Promise<unknown> {
+  const { data } = await client.post(
+    `/api/admin/branches/${branchId}/approve`,
+    { notes },
+  );
+  return data;
+}
+
+export async function bulkApproveBranches(branchIds: string[]): Promise<unknown> {
+  const { data } = await client.post('/api/admin/branches/bulk-approve', {
+    branch_ids: branchIds,
   });
   return data;
 }

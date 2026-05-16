@@ -131,16 +131,25 @@ const branches = {
     // and ongoing access. paid_through_date is set forward by each
     // successful billing cycle (monthly or bi-monthly) and consulted by
     // the billing job to decide when to flip status to 'paused'.
-    //   pending_payment — awaiting first/next subscription payment;
-    //                     branch hidden / non-operational until paid.
-    //   active          — paid through paid_through_date.
-    //   paused          — auto-paused (paid_through_date elapsed).
-    //   force_paused    — admin-paused (manual ops action).
+    //   pending_approval — branch created, awaiting admin approval;
+    //                      branch hidden / non-operational until approved.
+    //                      (Replaced the old Razorpay-gated
+    //                      'pending_payment' state — onboarding no longer
+    //                      collects an upfront subscription payment.)
+    //   active           — approved & operational.
+    //   paused           — auto-paused (paid_through_date elapsed).
+    //   force_paused     — admin-paused (manual ops action).
     // The `default` field is descriptive only — the schema is not a
     // runtime validator; defaults are applied by the writer code at
     // insert time. See branch.service.js / restaurant.js POST /branches.
-    subscription_status:   { type: 'string', enum: ['pending_payment', 'active', 'paused', 'force_paused'], default: 'pending_payment' },
+    subscription_status:   { type: 'string', enum: ['pending_approval', 'active', 'paused', 'force_paused'], default: 'pending_approval' },
     paid_through_date:     { type: 'date', default: null },
+    // Written ONLY by scripts/migrate-pending-payment-to-approval.js when
+    // a legacy 'pending_payment' (or null/absent) branch is migrated to
+    // 'pending_approval'. Descriptive — no runtime enforcement.
+    migrated_from_pending_payment: { type: 'boolean' },
+    migrated_at:                   { type: 'date' },
+    migration_source:              { type: 'string', enum: ['pending_payment', 'null'] },
     fssai_number:          { type: 'string' },  // 14-digit, required for food sync
     gst_number:            { type: 'string' },  // 15-char GSTIN, optional
     catalog_id:            { type: 'string' },
@@ -728,7 +737,12 @@ const restaurant_ledger = {
     restaurant_id:         { type: 'uuid', required: true },
     type:                  { type: 'string', required: true, enum: ['credit', 'debit'] },
     amount_paise:          { type: 'number', required: true },
-    ref_type:              { type: 'string', required: true, enum: ['payment', 'refund', 'payout', 'fee'] },
+    // Source of truth: services/ledger.service.js REF_TYPE_ALLOWLIST
+    // Runtime accepts all 12 values below; the original 4-value enum was
+    // stale (platform_fee / platform_fee_gst / referral / referral_fee_gst /
+    // marketing / tds / branch_subscription / platform_coupon_credit have
+    // shipped since Phase 3).
+    ref_type:              { type: 'string', required: true, enum: ['payment', 'refund', 'payout', 'fee', 'platform_fee', 'platform_fee_gst', 'referral', 'referral_fee_gst', 'marketing', 'tds', 'branch_subscription', 'platform_coupon_credit'] },
     // ref_id conventions (Phase 3.1):
     //   payment → rp_payment_id (e.g. 'pay_XXX')
     //   refund  → rp_refund_id  (e.g. 'rfnd_XXX')
@@ -1897,6 +1911,38 @@ const festivals_calendar = {
   ],
 };
 
+// Phase 5: branch billing snapshots. A frozen record of which branches
+// were billable in a given IST month. Two row types share this collection,
+// distinguished by `_id` shape:
+//   • per-branch row  → _id: '<branchId>:<monthKey>'  (e.g. 'b_abc:2026-08')
+//   • month anchor row → _id: 'month:<monthKey>'       (e.g. 'month:2026-08')
+// The anchor is written LAST by a full cron/manual run; settlement refuses
+// to post platform fees for a month with no anchor (snapshot_missing guard).
+const branch_billing_snapshots = {
+  collection: 'branch_billing_snapshots',
+  description: 'Phase 5 — frozen monthly billable-branch snapshots. Per-branch rows (_id "<branchId>:<monthKey>") + one anchor row (_id "month:<monthKey>") per fully-snapshotted month.',
+  fields: {
+    // Per-branch row: '<branchId>:<monthKey>'. Anchor row: 'month:<monthKey>'.
+    _id:          { type: 'string', required: true },
+    // Present on per-branch rows only (absent on the anchor row).
+    branch_id:    { type: 'string' },
+    restaurant_id:{ type: 'string' },
+    month_key:    { type: 'string', required: true }, // 'YYYY-MM' (IST)
+    // 'activation' only ever appears on per-branch rows (single-branch
+    // activation snapshot); the anchor is only 'cron' | 'manual'.
+    triggered_by: { type: 'string', required: true, enum: ['cron', 'manual', 'activation'] },
+    // Anchor row only — count of per-branch rows written in the same run.
+    branch_count: { type: 'number' },
+    snapshot_at:  { type: 'date', required: true },
+  },
+  indexes: [
+    // Index creation is driven by config/indexes.js (ensureIndexes reads
+    // that array, not this one); mirrored here for the data-shape contract.
+    { key: { restaurant_id: 1, month_key: 1 }, options: { name: 'idx_rid_month' } },
+    { key: { month_key: 1, snapshot_at: -1 }, options: { name: 'idx_month_snapshot' } },
+  ],
+};
+
 // ═══════════════════════════════════════════════════════════════
 // EXPORT ALL SCHEMAS
 // ═══════════════════════════════════════════════════════════════
@@ -1914,6 +1960,7 @@ const ALL_SCHEMAS = {
   feedback_events, restaurant_notifications,
   festivals_calendar,
   restaurant_integrations,
+  branch_billing_snapshots,
 };
 
 module.exports = { ALL_SCHEMAS, ...ALL_SCHEMAS };

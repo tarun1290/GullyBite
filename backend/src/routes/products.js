@@ -26,11 +26,14 @@ router.use(requireAuth);
 // this endpoint.
 router.post('/branches', validateBranchPayload, async (req, res) => {
   try {
-    const { branch, razorpay_order } = await branchSvc.createBranch({
+    // Branch onboarding is admin-gated — createBranch no longer returns a
+    // Razorpay order (branches start 'pending_approval' and an admin
+    // approves them). Response is just the created branch.
+    const { branch } = await branchSvc.createBranch({
       ...req.body,
       restaurant_id: req.restaurantId,
     });
-    res.status(201).json({ ...branch, razorpay_order });
+    res.status(201).json(branch);
   } catch (err) {
     res.status(err.statusCode || 500).json({ error: err.message });
   }

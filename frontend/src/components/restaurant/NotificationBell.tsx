@@ -68,7 +68,7 @@ export default function NotificationBell() {
     setOpen(false);
     await load();
     if (n.type === 'feedback_escalation' || n.type === 'feedback_positive') {
-      router.push('/dashboard/feedback');
+      router.push('/dashboard/reputation');
     }
   }
 

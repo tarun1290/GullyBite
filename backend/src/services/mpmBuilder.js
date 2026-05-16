@@ -127,8 +127,9 @@ async function buildBranchMPMs(branchId, restaurantId) {
 
   // ── Subscription paywall gate ────────────────────────────────
   // Only branches in 'active' state are surfaced to customers.
-  // Missing / unknown subscription_status fails closed — treated as
-  // pending_payment to prevent unpaid branches from leaking onto the
+  // Missing / unknown subscription_status fails closed — anything that
+  // isn't 'active' (incl. pending_approval / paused / force_paused /
+  // missing) is suppressed so unapproved branches never leak onto the
   // MPM if a writer ever forgets to set the field. Returns [] so the
   // caller's `if (mpms.length)` check naturally skips wa.sendMPM().
   if (branch.subscription_status !== 'active') {
