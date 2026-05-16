@@ -16,7 +16,7 @@
     "@aws-sdk/s3-request-presigner": "^3.1018.0",
     "axios": "^1.7.2",
     "bcryptjs": "^3.0.3",
-    "bullmq": "5.74.1",
+    "bullmq": "^5.76.6",
     "cheerio": "^1.2.0",
     "compression": "^1.8.1",
     "cors": "^2.8.5",
