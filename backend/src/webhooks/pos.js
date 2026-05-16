@@ -147,6 +147,7 @@ router.post('/:platform', async (req, res) => {
     }
 
     // ── MENU UPDATE — full re-pull ──
+    log.info({ eventType: event.type, hasRawPayload: !!event.rawPayload, outletId: event.outletId }, 'pos.js event dispatch');
     if (event.type === 'menu_update') {
       // If the event carried the full payload (Push Menu), parse and upsert directly.
       // Otherwise fall back to triggerSync which fetches from Petpooja API.
