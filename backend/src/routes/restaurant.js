@@ -2502,7 +2502,7 @@ router.get('/menu/all', async (req, res) => {
     }, 300);
 
     res.json(payload);
-  } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
+  } catch (e) { logger.error({ err: e }, 'menu/all failed'); res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
 // GET /api/restaurant/menu/unassigned — items not assigned to any branch
