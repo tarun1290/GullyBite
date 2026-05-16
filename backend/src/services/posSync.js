@@ -104,8 +104,6 @@ async function upsertMenu(branchId, platform, { categories, items }, syncMode) {
     catMap[cat.name] = existing._id;
   }
 
-  log.info({ catMapKeys: Object.keys(catMap), sampleItemCategory: items[0]?.category }, 'upsertMenu debug');
-
   if (syncMode === 'full_replace') {
     await col('menu_items').updateMany(
       { branch_id: branchId, pos_platform: platform },
@@ -128,6 +126,7 @@ async function upsertMenu(branchId, platform, { categories, items }, syncMode) {
     if (existing) {
       const changed = existing.name !== item.name || existing.price_paise !== item.price_paise ||
         existing.is_available !== item.is_available || existing.description !== item.description ||
+        (existing.category_id || null) !== (categoryId || null) ||
         (item.image_url && existing.image_url !== item.image_url);
 
       if (changed) {
