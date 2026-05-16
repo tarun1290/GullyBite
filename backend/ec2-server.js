@@ -40,6 +40,7 @@ const http = require('http');
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
+const compression = require('compression');
 const path = require('path');
 const mongoSanitize = require('mongo-sanitize');
 const { WebSocketServer } = require('ws');
@@ -101,6 +102,13 @@ app.use((err, req, res, next) => {
   }
   next(err);
 });
+
+// ─── PERFORMANCE: RESPONSE COMPRESSION ────────────────────────
+// gzip/brotli-negotiated compression for every response. Mounted
+// before any route so all JSON payloads (analytics, menu/all, etc.)
+// are compressed on the wire. Honours the standard `Accept-Encoding`
+// negotiation and the per-response `Cache-Control: no-transform`.
+app.use(compression());
 
 // ─── SECURITY: MONGO-SANITIZE (operator-injection guard) ──────
 // Strips keys beginning with `$` from req.body / req.query / req.params,

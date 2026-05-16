@@ -1140,11 +1140,9 @@ export async function getCampaignSmartSendTime(): Promise<unknown> {
 
 // ── Marketing Analytics ─────────────────────────────────────────────
 
-// The monolithic /dashboard endpoint + getMarketingAnalyticsDashboard were
-// retired — the marketing-analytics page was dismantled and its sections
-// distributed to /campaigns, /customers, /loyalty, /reputation. Each
-// surviving section has its own endpoint; responses are { ok, data }
-// where `data` is that section's shape (no full-dashboard envelope).
+// getMarketingAnalyticsDashboard was split into per-section calls: each
+// section has its own /api/restaurant/marketing-analytics/<section>
+// endpoint returning { ok, data } (no full-dashboard envelope).
 
 export async function getMarketingAnalyticsSection(section: string, period: string = '30d'): Promise<unknown> {
   const { data } = await client.get(`/api/restaurant/marketing-analytics/${section}`, { params: { period } });

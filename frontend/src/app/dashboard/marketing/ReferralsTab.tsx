@@ -3,10 +3,8 @@
 import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
 import { useToast } from '../../../components/Toast';
-// Captain-listing was merged in (its /dashboard/captain-listing route
-// is removed). It renders inline here via a toggle from Discovery,
-// replacing the two former cross-route links. Verbatim component —
-// only its reach changed (route link → in-tab panel).
+// Captain-listing renders inline via a toggle from the Discovery
+// section (the in-tab "Claim / Manage listing" affordance).
 import CaptainListingPanel from './CaptainListingPanel';
 import {
   getCaptainListing,
@@ -177,9 +175,8 @@ export default function ReferralsTab() {
 
   const recent = referrals.slice(0, 10);
 
-  // Captain-listing absorbed from the deleted /dashboard/captain-listing
-  // route. Reached via the Discovery section's manage/claim affordance;
-  // rendered inline (verbatim component) with a back control owned here.
+  // Inline captain-listing panel — opened from Discovery's manage/claim
+  // affordance; a back control returns to the referral sections.
   if (showListingPanel) {
     return (
       <div id="tab-referrals">

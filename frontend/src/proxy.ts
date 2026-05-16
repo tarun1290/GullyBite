@@ -24,6 +24,8 @@ const EXACT_REDIRECTS: Record<string, string> = {
   '/dashboard/referrals': '/dashboard/marketing',
   '/dashboard/captain-listing': '/dashboard/marketing',
   '/dashboard/dine-in': '/dashboard/marketing',
+  // Admin: coupon-codes folded into /admin/coupons as the "Codes" tab.
+  '/admin/coupon-codes': '/admin/coupons',
 };
 
 // Prefix redirects: any path at or under the key (e.g. a sub-path like
@@ -41,6 +43,8 @@ const PREFIX_REDIRECTS: ReadonlyArray<readonly [string, string]> = [
   ['/dashboard/referrals/', '/dashboard/marketing'],
   ['/dashboard/captain-listing/', '/dashboard/marketing'],
   ['/dashboard/dine-in/', '/dashboard/marketing'],
+  // Admin: coupon-codes folded into /admin/coupons "Codes" tab.
+  ['/admin/coupon-codes/', '/admin/coupons'],
 ];
 
 export function proxy(request: NextRequest) {
@@ -82,5 +86,7 @@ export const config = {
     '/dashboard/captain-listing/:path*',
     '/dashboard/dine-in',
     '/dashboard/dine-in/:path*',
+    '/admin/coupon-codes',
+    '/admin/coupon-codes/:path*',
   ],
 };

@@ -215,8 +215,9 @@ export interface CityInterestLeaderboard {
 }
 
 // ── Captain (restaurant-side) ─────────────────────────────────
-// Surfaces consumed by /dashboard/captain-listing. Driven by
-// /api/restaurant/captain/{listing,suggested}. The listing endpoint
+// Surfaces consumed by the Referrals tab of /dashboard/marketing
+// (the former /dashboard/captain-listing, folded in as CaptainListingPanel).
+// Driven by /api/restaurant/captain/{listing,suggested}. The listing endpoint
 // returns a discriminated union (linked vs not); when linked it also
 // rolls up notify_intents totals so the page can render a "X waiting"
 // callout without a second round-trip.
@@ -255,12 +256,9 @@ export interface CaptainLogListResponse {
 }
 
 // ── Restaurant referrals (city captain) ────────────────────────
-// Surfaces consumed by /dashboard/referrals. Driven by
-// /api/restaurant/referrals and /api/restaurant/referrals/links.
-// The local interfaces in marketing/ReferralsSection.tsx predate
-// these and are kept as-is for backwards-compat — they have the
-// same shape with extra `?` softness, so the runtime cast still
-// works against this stricter version.
+// Surfaces consumed by the Referrals tab of /dashboard/marketing
+// (formerly /dashboard/referrals). Driven by /api/restaurant/referrals
+// and /api/restaurant/referrals/links.
 export type ReferralSource =
   | 'gbref'
   | 'directory'

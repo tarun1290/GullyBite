@@ -84,7 +84,7 @@ const INPUT_CLS = 'bg-neutral-0 border border-rim rounded-md py-2 px-3 text-base
 const LBL_CLS = 'text-xs text-dim font-semibold block mb-1';
 const STAR_CLS = 'text-red-500';
 
-export default function AdminCouponCodesPage() {
+export default function CouponCodesTab() {
   const { showToast } = useToast();
   const [restaurants, setRestaurants] = useState<RestaurantLite[]>([]);
   const [restaurantsErr, setRestaurantsErr] = useState<string | null>(null);

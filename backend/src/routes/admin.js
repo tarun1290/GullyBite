@@ -1418,6 +1418,17 @@ router.patch('/coupons/:id', requireAdmin, express.json(), async (req, res) => {
   } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
+router.delete('/coupons/:id', requireAdmin, async (req, res) => {
+  try {
+    // Hard delete — mirrors the PATCH handler's raw-string _id resolution
+    // (the coupons collection keys on a string _id, not ObjectId). No
+    // soft-delete flag exists on this collection.
+    const r = await col('coupons').deleteOne({ _id: req.params.id });
+    if (!r.deletedCount) return res.status(404).json({ ok: false, error: 'Coupon not found' });
+    res.json({ ok: true, deleted: true });
+  } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
+});
+
 // ─── COUPON TEMPLATES ────────────────────────────────────────
 // Marketing templates with a copy_code button, managed per restaurant WABA.
 // Thin wrappers over services/couponTemplate.service.js.

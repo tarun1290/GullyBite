@@ -193,8 +193,8 @@ textarea { resize: vertical; min-height: 66px; }
    product callouts). Without these rules `.notice-ico` collapses to
    a default block-level div, which is what produced the
    emoji-on-its-own-row bug seen in AutoJourneysSection,
-   IntegrationsSection, MarketingWaNumberSection, CampaignsSection
-   and the four dashboard pages that share the pattern. The .wa /
+   IntegrationsSection, MarketingWaNumberSection
+   and the dashboard pages that share the pattern. The .wa /
    .warn / .danger modifiers tint the surface using the brand
    palette tokens. */
 .notice {

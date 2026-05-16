@@ -4,7 +4,7 @@ import { Suspense, useEffect, useRef, useState, type ChangeEvent, type FormEvent
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../../components/Toast';
-import { emailSignin, emailSignup, googleAuth, manualLogin, getMe } from '../../api/auth';
+import { emailSignup, googleAuth, manualLogin, getMe } from '../../api/auth';
 import useGoogleAuth from '../../hooks/useGoogleAuth';
 import { routeByStatus } from '../../utils/routeByStatus';
 import type { AuthUser, AuthResponse } from '../../types';
@@ -46,9 +46,6 @@ function LoginForm() {
 
   const [siEmail, setSiEmail] = useState<string>('');
   const [siPw, setSiPw] = useState<string>('');
-
-  const [mlEmail, setMlEmail] = useState<string>('');
-  const [mlPw, setMlPw] = useState<string>('');
 
   const [suName, setSuName] = useState<string>('');
   const [suEmail, setSuEmail] = useState<string>('');
@@ -97,7 +94,7 @@ function LoginForm() {
     if (busy) return;
     setBusy(true);
     try {
-      const d = (await emailSignin(siEmail.trim(), siPw)) as LooseAuth;
+      const d = (await manualLogin(siEmail.trim(), siPw)) as LooseAuth;
       if (!d?.token) {
         toastRef.current(d?.error || 'Sign in failed', 'error');
         return;
@@ -134,27 +131,6 @@ function LoginForm() {
     } catch (err: unknown) {
       const e2 = err as { userMessage?: string; message?: string };
       toastRef.current(e2?.userMessage || e2?.message || 'Sign up failed', 'error');
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  // Demo-only manual login. Mirrors the Google flow's post-token
-  // handling exactly (finalizeAuth → getMe → login → routeByStatus).
-  const handleManualLogin = async (e: FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    if (busy) return;
-    setBusy(true);
-    try {
-      const d = (await manualLogin(mlEmail.trim(), mlPw)) as LooseAuth;
-      if (!d?.token) {
-        toastRef.current(d?.error || 'Login failed', 'error');
-        return;
-      }
-      await finalizeAuth(d.token);
-    } catch (err: unknown) {
-      const e2 = err as { userMessage?: string; message?: string };
-      toastRef.current(e2?.userMessage || e2?.message || 'Login failed', 'error');
     } finally {
       setBusy(false);
     }
@@ -222,40 +198,6 @@ function LoginForm() {
             <GoogleIcon />
             Continue with Google
           </button>
-
-          <div className="auth-divider"><span>OR</span></div>
-
-          {/* Demo manual-login form. Always visible — uses the per-restaurant
-              manual_login_enabled flag on the backend, not the regular signin
-              path. Kept above the standard signup/signin form so demo testers
-              don't have to hunt for it. */}
-          <form onSubmit={handleManualLogin}>
-            <div className="fld">
-              <label>Demo Email <span className="req">*</span></label>
-              <input
-                type="email"
-                placeholder="test@gmail.com"
-                autoComplete="email"
-                required
-                value={mlEmail}
-                onChange={onChangeStr(setMlEmail)}
-              />
-            </div>
-            <div className="fld">
-              <label>Demo Password <span className="req">*</span></label>
-              <input
-                type="password"
-                placeholder="Demo password"
-                autoComplete="current-password"
-                required
-                value={mlPw}
-                onChange={onChangeStr(setMlPw)}
-              />
-            </div>
-            <button type="submit" className="btn-full" disabled={busy}>
-              {busy ? (<><span className="spin" /> Signing in…</>) : 'Demo Login →'}
-            </button>
-          </form>
 
           <div className="auth-divider"><span>OR</span></div>
 

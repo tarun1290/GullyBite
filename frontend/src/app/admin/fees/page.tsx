@@ -172,7 +172,7 @@ export default function AdminFeesPage() {
   return (
     <div id="tab-admin-fees" className="flex flex-col gap-4">
       <div>
-        <h2 className="m-0">Fees</h2>
+        <h2 className="m-0">Fee Attribution</h2>
         <p className="mt-1 mb-0 text-dim text-base">
           Cancellation-fault and platform-absorbed fee accounting across all restaurants.
         </p>

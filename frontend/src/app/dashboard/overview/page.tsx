@@ -34,7 +34,6 @@ export default function OverviewPage() {
 
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
-  const [d1, setD1] = useState<AnalyticsSummary | null>(null);
   const [d7, setD7] = useState<AnalyticsSummary | null>(null);
   const [recent, setRecent] = useState<Order[]>([]);
   const [branches, setBranches] = useState<Branch[]>([]);
@@ -44,14 +43,12 @@ export default function OverviewPage() {
     setLoading(true);
     setError(null);
     try {
-      const [summary1, summary7, orders, branchList, menu] = await Promise.all([
-        getAnalyticsSummary(1).catch(() => null),
+      const [summary7, orders, branchList, menu] = await Promise.all([
         getAnalyticsSummary(7).catch(() => null),
         getRestaurantOrders({ limit: 5 }).catch(() => []),
         getBranches().catch(() => []),
         getMenuAll().catch(() => ({ total_count: 0 } as MenuAllResponse)),
       ]);
-      setD1(summary1);
       setD7(summary7);
       setRecent(Array.isArray(orders) ? orders : []);
       setBranches(Array.isArray(branchList) ? branchList : []);
@@ -67,15 +64,25 @@ export default function OverviewPage() {
   useEffect(() => { loadAll(); }, [loadAll]);
 
   // Socket.io live channel — sourced from SocketProvider context so
-  // we share one connection with every other dashboard page. Refetch
-  // the summary when a new order arrives or a payment is confirmed so
-  // today's-orders / today's-revenue counters update without a manual
-  // reload. Generic 'order_status_changed' transitions are intentionally
-  // ignored here — they don't move the headline numbers and would
-  // just thrash the analytics fetches.
+  // we share one connection with every other dashboard page. When a
+  // new order arrives or a payment is confirmed we refresh the
+  // recent-orders list AND the days=7 analytics (which drives the
+  // headline today/this-week counters) in parallel — but NOT the
+  // menu, which doesn't change per order, so re-running the full
+  // loadAll() on every socket event needlessly re-fetched the menu
+  // endpoint. Generic 'order_status_changed' transitions are
+  // intentionally ignored here.
   const { lastOrder, lastPaid } = useSocketContext();
-  useEffect(() => { if (lastOrder) void loadAll(); }, [lastOrder, loadAll]);
-  useEffect(() => { if (lastPaid) void loadAll(); }, [lastPaid, loadAll]);
+  const refreshOrders = useCallback(async () => {
+    const [orders, summary7] = await Promise.all([
+      getRestaurantOrders({ limit: 5 }).catch(() => []),
+      getAnalyticsSummary(7).catch(() => null),
+    ]);
+    setRecent(Array.isArray(orders) ? orders : []);
+    setD7(summary7);
+  }, []);
+  useEffect(() => { if (lastOrder) void refreshOrders(); }, [lastOrder, refreshOrders]);
+  useEffect(() => { if (lastPaid) void refreshOrders(); }, [lastPaid, refreshOrders]);
 
   const waConnected = isWaConnected(restaurant);
   const profileDone = Boolean(restaurant?.brand_name && restaurant?.phone);
@@ -121,8 +128,17 @@ export default function OverviewPage() {
     );
   }
 
-  const todayOrders = d1?.summary?.total_orders ?? 0;
-  const todayRevenue = `₹${Math.round(d1?.summary?.total_revenue ?? 0)}`;
+  // Today's numbers are derived from the last entry of the days=7
+  // daily breakdown (backend sorts ascending → last = most recent
+  // date), avoiding a separate days=1 analytics round-trip.
+  // `daily` is untyped on AnalyticsSummary (open index signature), so
+  // it's narrowed locally. Per the backend handler: `orders` counts
+  // all statuses for the day; `revenue` is delivered-only — matching
+  // the "All statuses" / "Delivered only" StatCard labels below.
+  const daily = (d7?.daily as Array<{ date: string; orders: number; revenue: number }> | undefined) ?? [];
+  const todayBucket = daily.length > 0 ? daily[daily.length - 1] : null;
+  const todayOrders = todayBucket?.orders ?? 0;
+  const todayRevenue = `₹${Math.round(todayBucket?.revenue ?? 0)}`;
   const weekOrders = d7?.summary?.total_orders ?? 0;
 
   return (

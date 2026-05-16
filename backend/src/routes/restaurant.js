@@ -293,6 +293,7 @@ router.patch('/owner/items/:itemId/stock', requireOwnerAuth, express.json(), asy
       { $set: { is_available, updated_at: new Date() } },
     );
     if (item.branch_id) memcache.del(`branch:${item.branch_id}:menu`);
+    invalidateCache(`restaurant:${req.restaurantId}:menu:all`);
     res.json({ ok: true, is_available });
   } catch (err) {
     req.log?.error?.({ err }, 'owner item-stock failed');
@@ -910,6 +911,7 @@ router.post('/menu/upload-image', upload.single('image'), async (req, res) => {
         }}
       );
       if (item.branch_id) memcache.del(`branch:${item.branch_id}:menu`);
+      invalidateCache(`restaurant:${req.restaurantId}:menu:all`);
     }
 
     res.json(result);
@@ -981,6 +983,7 @@ router.post('/images/bulk-upload', upload.array('images', 20), async (req, res) 
     // `find({ branch_id: branchId })` above), so a single del covers
     // every mutation made in this loop.
     if (matched > 0) memcache.del(`branch:${branchId}:menu`);
+    if (matched > 0) invalidateCache(`restaurant:${req.restaurantId}:menu:all`);
 
     res.json({ uploaded: results.length, matched, unmatched, results });
   } catch (err) {
@@ -1031,6 +1034,7 @@ router.post('/images/from-url', async (req, res) => {
         }}
       );
       if (item.branch_id) memcache.del(`branch:${item.branch_id}:menu`);
+      invalidateCache(`restaurant:${req.restaurantId}:menu:all`);
     }
 
     res.json(result);
@@ -1064,6 +1068,7 @@ router.delete('/images/:itemId', async (req, res) => {
       }}
     );
     if (item.branch_id) memcache.del(`branch:${item.branch_id}:menu`);
+    invalidateCache(`restaurant:${req.restaurantId}:menu:all`);
 
     res.json({ success: true });
   } catch (err) {
@@ -2256,7 +2261,7 @@ router.delete('/branches/:id/permanent', async (req, res) => {
     await col('branches').deleteOne({ _id: branchId, restaurant_id: req.restaurantId });
 
     require('../config/memcache').del(`branch:${branchId}`);
-    invalidateCache(`restaurant:${req.restaurantId}:branches`, `restaurant:${req.restaurantId}:profile`);
+    invalidateCache(`restaurant:${req.restaurantId}:branches`, `restaurant:${req.restaurantId}:profile`, `restaurant:${req.restaurantId}:menu:all`);
 
     log({
       actorType: 'restaurant', actorId: String(req.restaurantId),
@@ -2387,6 +2392,7 @@ router.post('/branches/:branchId/categories', async (req, res) => {
     const now = new Date();
     const cat = { _id: catId, branch_id: req.params.branchId, name: name.trim(), description: description || null, sort_order: sortOrder || 0, created_at: now };
     await col('menu_categories').insertOne(cat);
+    invalidateCache(`restaurant:${req.restaurantId}:menu:all`);
     res.status(201).json(mapId(cat));
   } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
@@ -2405,6 +2411,7 @@ router.put('/branches/:branchId/categories/:catId', async (req, res) => {
       { returnDocument: 'after' }
     );
     if (!result) return res.status(404).json({ error: 'Category not found' });
+    invalidateCache(`restaurant:${req.restaurantId}:menu:all`);
     res.json(mapId(result));
   } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
@@ -2421,6 +2428,7 @@ router.delete('/branches/:branchId/categories/:catId', async (req, res) => {
       { $set: { category_id: null } }
     );
     memcache.del(`branch:${req.params.branchId}:menu`);
+    invalidateCache(`restaurant:${req.restaurantId}:menu:all`);
     res.json({ ok: true });
   } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
@@ -2442,49 +2450,58 @@ router.get('/menu/all', async (req, res) => {
     }
     setBrandHeaders(res, brandCtx);
 
-    const branchDocs = await col('branches').find({ restaurant_id: req.restaurantId }).toArray();
-    const branchIds = branchDocs.map(b => String(b._id));
+    // Cached full merged menu (5 min TTL). Invalidated by every
+    // menu_items / menu_categories write path (see invalidateCache
+    // `restaurant:${id}:menu:all` call-sites). Brand context is
+    // resolved OUTSIDE the cache because it sets response headers and
+    // can 400 — only the heavy DB fetch + transform is memoised.
+    const payload = await getCached(`restaurant:${req.restaurantId}:menu:all`, async () => {
+      const branchDocs = await col('branches').find({ restaurant_id: req.restaurantId }).toArray();
+      const branchIds = branchDocs.map(b => String(b._id));
 
-    // Fetch items from all branches AND unassigned items (branch_id is null or missing)
-    const itemFilter = branchIds.length
-      ? { $or: [{ branch_id: { $in: branchIds } }, { restaurant_id: req.restaurantId, branch_id: null }, { restaurant_id: req.restaurantId, branch_id: { $exists: false } }] }
-      : { restaurant_id: req.restaurantId };
-    if (brandCtx.effective_brand_id) itemFilter.brand_id = brandCtx.effective_brand_id;
+      // Fetch items from all branches AND unassigned items (branch_id is null or missing)
+      const itemFilter = branchIds.length
+        ? { $or: [{ branch_id: { $in: branchIds } }, { restaurant_id: req.restaurantId, branch_id: null }, { restaurant_id: req.restaurantId, branch_id: { $exists: false } }] }
+        : { restaurant_id: req.restaurantId };
+      if (brandCtx.effective_brand_id) itemFilter.brand_id = brandCtx.effective_brand_id;
 
-    const [cats, items] = await Promise.all([
-      branchIds.length ? col('menu_categories').find({ branch_id: { $in: branchIds } }).sort({ sort_order: 1 }).toArray() : [],
-      col('menu_items').find(itemFilter).sort({ sort_order: 1, name: 1 }).toArray(),
-    ]);
+      const [cats, items] = await Promise.all([
+        branchIds.length ? col('menu_categories').find({ branch_id: { $in: branchIds } }).sort({ sort_order: 1 }).toArray() : [],
+        col('menu_items').find(itemFilter).sort({ sort_order: 1, name: 1 }).toArray(),
+      ]);
 
-    // Build a branch name lookup
-    const branchMap = {};
-    for (const b of branchDocs) branchMap[String(b._id)] = b.name || 'Unnamed';
+      // Build a branch name lookup
+      const branchMap = {};
+      for (const b of branchDocs) branchMap[String(b._id)] = b.name || 'Unnamed';
 
-    const mappedCats = mapIds(cats);
-    const mappedItems = mapIds(items).map(i => ({
-      ...i,
-      branch_name: i.branch_id ? (branchMap[i.branch_id] || 'Unknown') : null,
-      _unassigned: !i.branch_id,
-    }));
+      const mappedCats = mapIds(cats);
+      const mappedItems = mapIds(items).map(i => ({
+        ...i,
+        branch_name: i.branch_id ? (branchMap[i.branch_id] || 'Unknown') : null,
+        _unassigned: !i.branch_id,
+      }));
 
-    // Deduplicate categories by name (same category name across branches → merge)
-    const catByName = {};
-    for (const c of mappedCats) {
-      const key = (c.name || 'Uncategorized').toLowerCase();
-      if (!catByName[key]) catByName[key] = { id: c.id, name: c.name, catIds: [c.id] };
-      else catByName[key].catIds.push(c.id);
-    }
+      // Deduplicate categories by name (same category name across branches → merge)
+      const catByName = {};
+      for (const c of mappedCats) {
+        const key = (c.name || 'Uncategorized').toLowerCase();
+        if (!catByName[key]) catByName[key] = { id: c.id, name: c.name, catIds: [c.id] };
+        else catByName[key].catIds.push(c.id);
+      }
 
-    const result = Object.values(catByName).map(c => ({
-      ...c,
-      items: mappedItems.filter(i => c.catIds.includes(i.category_id)),
-    }));
-    result.push({ id: null, name: 'Uncategorized', items: mappedItems.filter(i => !i.category_id) });
+      const result = Object.values(catByName).map(c => ({
+        ...c,
+        items: mappedItems.filter(i => c.catIds.includes(i.category_id)),
+      }));
+      result.push({ id: null, name: 'Uncategorized', items: mappedItems.filter(i => !i.category_id) });
 
-    // Count unassigned for frontend
-    const unassignedCount = mappedItems.filter(i => i._unassigned).length;
-    const response = result.filter(c => c.items.length > 0);
-    res.json({ groups: response, unassigned_count: unassignedCount, total_count: mappedItems.length });
+      // Count unassigned for frontend
+      const unassignedCount = mappedItems.filter(i => i._unassigned).length;
+      const response = result.filter(c => c.items.length > 0);
+      return { groups: response, unassigned_count: unassignedCount, total_count: mappedItems.length };
+    }, 300);
+
+    res.json(payload);
   } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
@@ -2623,6 +2640,7 @@ router.post('/branches/:branchId/menu', requireStaffPermission('manage_menu'), r
     };
     await col('menu_items').insertOne(item);
     memcache.del(`branch:${req.body.branchId}:menu`);
+    invalidateCache(`restaurant:${req.restaurantId}:menu:all`);
 
     await col('restaurants').updateOne(
       { _id: req.restaurantId },
@@ -2746,6 +2764,7 @@ router.put('/menu/:itemId', requireStaffPermission('manage_menu'), requireBranch
         ).catch(() => {}); // fire-and-forget
       }
     }
+    invalidateCache(`restaurant:${req.restaurantId}:menu:all`);
     res.json({ success: true });
 
     log({
@@ -2779,6 +2798,7 @@ router.delete('/menu/:itemId', requireStaffPermission('manage_menu'), requireBra
 
     await col('menu_items').deleteOne({ _id: item._id });
     if (item.branch_id) memcache.del(`branch:${item.branch_id}:menu`);
+    invalidateCache(`restaurant:${req.restaurantId}:menu:all`);
 
     catalog.deleteProduct(item, item.branch_id)
       .catch(err => logger.error({ err, itemId: req.params.itemId }, 'Menu delete sync failed'));
@@ -2848,6 +2868,7 @@ router.post('/menu/bulk-delete', requireStaffPermission('manage_menu'), async (r
 
     const branchIds = [...new Set(items.map(i => i.branch_id).filter(Boolean))];
     branchIds.forEach(bid => memcache.del(`branch:${bid}:menu`));
+    invalidateCache(`restaurant:${req.restaurantId}:menu:all`);
 
     // Fire-and-forget explicit DELETE batches to Meta, one call per branch.
     // Replaces the prior queueSync() re-sync approach — that left the window
@@ -2907,6 +2928,7 @@ router.patch('/menu/bulk-availability', requireStaffPermission('manage_menu'), a
       affectedBranches.forEach(bid => memcache.del(`branch:${bid}:menu`));
     }
 
+    invalidateCache(`restaurant:${req.restaurantId}:menu:all`);
     res.json({ success: true, updated_count: result.modifiedCount, is_available: !!available, meta_sync: 'queued' });
 
     // Fire-and-forget: sync to Meta
@@ -2948,6 +2970,7 @@ router.patch('/menu/:id/availability', requireStaffPermission('manage_menu'), re
     // Clear MPM cache so next customer gets fresh menu
     if (item.branch_id) memcache.del(`branch:${item.branch_id}:menu`);
 
+    invalidateCache(`restaurant:${req.restaurantId}:menu:all`);
     res.json({ success: true, item_id: req.params.id, is_available: available, meta_sync: 'queued' });
 
     // Fire-and-forget: sync to Meta AFTER response is sent
@@ -2986,6 +3009,7 @@ router.patch('/menu/:id/availability-all-branches', requireStaffPermission('mana
     const affectedBranchIds = [...new Set(affectedItems.map(i => i.branch_id).filter(Boolean))];
     affectedBranchIds.forEach(bid => memcache.del(`branch:${bid}:menu`));
 
+    invalidateCache(`restaurant:${req.restaurantId}:menu:all`);
     res.json({ success: true, updated_count: result.modifiedCount, affected_branches: affectedBranchIds.length, is_available: available, meta_sync: 'queued' });
 
     // Fire-and-forget: sync to Meta
@@ -3309,6 +3333,7 @@ router.post('/branches/:branchId/menu/csv', async (req, res) => {
     if (skippedNonMatchingCount > 0) {
       responsePayload.skipped_non_matching_branch = skippedNonMatchingCount;
     }
+    invalidateCache(`restaurant:${req.restaurantId}:menu:all`);
     res.json(responsePayload);
 
     log({ actorType: 'restaurant', actorId: String(req.restaurantId), actorName: req.user?.name || req.user?.email || req.userRole || null, action: 'menu.bulk_upload', category: 'menu', description: `Bulk uploaded menu items`, restaurantId: String(req.restaurantId), severity: 'info' });
@@ -3685,6 +3710,7 @@ router.post('/menu/csv', async (req, res) => {
       [{ $set: { onboarding_step: { $max: ['$onboarding_step', 4] } } }]
     );
 
+    invalidateCache(`restaurant:${req.restaurantId}:menu:all`);
     res.json({
       success: true,
       multi_branch: !!branchCol,
@@ -3843,6 +3869,7 @@ router.post('/menu/:itemId/variants', async (req, res) => {
 
     if (srcItem.branch_id) memcache.del(`branch:${srcItem.branch_id}:menu`);
     queueSync(req.restaurantId, 'branch', [srcItem.branch_id]);
+    invalidateCache(`restaurant:${req.restaurantId}:menu:all`);
 
     res.status(201).json(mapId(newItem));
   } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
@@ -4278,6 +4305,7 @@ router.post('/menu/variant', requireStaffPermission('manage_menu'), requireBranc
 
     memcache.del(`branch:${branchId}:menu`);
     queueSync(req.restaurantId, 'branch', [branchId]);
+    invalidateCache(`restaurant:${req.restaurantId}:menu:all`);
 
     res.status(201).json(mapId(newItem));
   } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
@@ -4935,6 +4963,7 @@ router.post('/catalog/reverse-sync', async (req, res) => {
 
     await col('restaurants').updateOne({ _id: req.restaurantId }, { $set: { last_catalog_pull_at: new Date() } });
     req.log.info({ stats }, 'Reverse sync complete');
+    invalidateCache(`restaurant:${req.restaurantId}:menu:all`);
     res.json({ success: true, ...stats });
 
     log({ actorType: 'restaurant', actorId: String(req.userId || req.restaurantId), actorName: req.user?.name || req.user?.email || req.userRole || null, action: 'catalog.reverse_sync', category: 'catalog', description: `Reverse sync from Meta: ${stats.new_items_added} new, ${stats.existing_items_updated} updated`, restaurantId: req.restaurantId, severity: 'info' });
@@ -5371,6 +5400,7 @@ router.post('/menu/bulk-assign-branch', requireStaffPermission('manage_menu'), a
     memcache.del(`branch:${branch_id}:menu`);
     oldBranchIds.forEach(bid => { if (bid && bid !== branch_id) memcache.del(`branch:${bid}:menu`); });
     queueSync(req.restaurantId, 'branch', [branch_id]);
+    invalidateCache(`restaurant:${req.restaurantId}:menu:all`);
 
     res.json({ success: true, assigned: result.modifiedCount, branch_name: branch.name });
   } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
@@ -5418,6 +5448,7 @@ router.put('/menu/:itemId/branch', requireStaffPermission('manage_menu'), requir
     // No Meta catalog change needed — one catalog for all branches
     // Just re-sync to update product_tags/retailer_id if branch-encoded
     queueSync(req.restaurantId, 'branch', [branch_id, oldBranchId].filter(Boolean));
+    invalidateCache(`restaurant:${req.restaurantId}:menu:all`);
 
     res.json({ success: true, item_name: item.name, branch_name: branch.name });
   } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
@@ -6490,36 +6521,44 @@ router.get(
 router.get('/analytics', requireStaffPermission('view_reports'), async (req, res) => {
   try {
     const days = parseInt(req.query.days || 7);
-    const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
 
-    const branches = await col('branches').find({ restaurant_id: req.restaurantId }).project({ _id: 1 }).toArray();
-    const branchIds = branches.map(b => String(b._id));
+    // Cached analytics summary (5 min TTL, keyed per window). No
+    // write-path invalidation — 5 min staleness is acceptable here,
+    // TTL expiry is sufficient.
+    const payload = await getCached(`restaurant:${req.restaurantId}:analytics:${days}`, async () => {
+      const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
 
-    const orders = await col('orders').find({
-      branch_id: { $in: branchIds },
-      created_at: { $gte: since },
-    }).toArray();
+      const branches = await col('branches').find({ restaurant_id: req.restaurantId }).project({ _id: 1 }).toArray();
+      const branchIds = branches.map(b => String(b._id));
 
-    const total_orders = orders.length;
-    const delivered    = orders.filter(o => o.status === 'DELIVERED');
-    const cancelled    = orders.filter(o => o.status === 'CANCELLED').length;
-    const total_revenue = delivered.reduce((s, o) => s + (parseFloat(o.total_rs) || 0), 0);
-    const avg_order_value = delivered.length ? total_revenue / delivered.length : 0;
+      const orders = await col('orders').find({
+        branch_id: { $in: branchIds },
+        created_at: { $gte: since },
+      }).toArray();
 
-    // Daily breakdown
-    const dailyMap = {};
-    for (const o of orders) {
-      const date = new Date(o.created_at).toISOString().slice(0, 10);
-      if (!dailyMap[date]) dailyMap[date] = { date, orders: 0, revenue: 0 };
-      dailyMap[date].orders++;
-      if (o.status === 'DELIVERED') dailyMap[date].revenue += parseFloat(o.total_rs) || 0;
-    }
-    const daily = Object.values(dailyMap).sort((a, b) => a.date.localeCompare(b.date));
+      const total_orders = orders.length;
+      const delivered    = orders.filter(o => o.status === 'DELIVERED');
+      const cancelled    = orders.filter(o => o.status === 'CANCELLED').length;
+      const total_revenue = delivered.reduce((s, o) => s + (parseFloat(o.total_rs) || 0), 0);
+      const avg_order_value = delivered.length ? total_revenue / delivered.length : 0;
 
-    res.json({
-      summary: { total_orders, delivered: delivered.length, cancelled, total_revenue, avg_order_value },
-      daily,
-    });
+      // Daily breakdown
+      const dailyMap = {};
+      for (const o of orders) {
+        const date = new Date(o.created_at).toISOString().slice(0, 10);
+        if (!dailyMap[date]) dailyMap[date] = { date, orders: 0, revenue: 0 };
+        dailyMap[date].orders++;
+        if (o.status === 'DELIVERED') dailyMap[date].revenue += parseFloat(o.total_rs) || 0;
+      }
+      const daily = Object.values(dailyMap).sort((a, b) => a.date.localeCompare(b.date));
+
+      return {
+        summary: { total_orders, delivered: delivered.length, cancelled, total_revenue, avg_order_value },
+        daily,
+      };
+    }, 300);
+
+    res.json(payload);
   } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 

@@ -3,50 +3,102 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { usePathname } from 'next/navigation';
 import AdminProtectedRoute from '../../components/AdminProtectedRoute';
-import Sidebar, { type NavItem } from '../../components/Sidebar';
+import Sidebar, { type NavGroup } from '../../components/Sidebar';
 import Navbar from '../../components/Navbar';
 import { useAdminAuth } from '../../contexts/AdminAuthContext';
 import { SocketProvider } from '../../components/shared/SocketProvider';
 import LiveIndicator from '../../components/shared/LiveIndicator';
 import RestaurantMessageButton from '../../components/admin/RestaurantMessageButton';
 
-const NAV_ITEMS: NavItem[] = [
-  { label: 'Overview',      icon: '📊', path: '/admin/overview' },
-  { label: 'Flows',         icon: '🔄', path: '/admin/flows' },
-  { label: 'Templates',     icon: '📄', path: '/admin/templates' },
-  { label: 'Campaign Tpls', icon: '✨',       path: '/admin/campaign-templates' },
-  { label: 'Applications',  icon: '📝', path: '/admin/applications' },
-  { label: 'Restaurants',   icon: '🏪', path: '/admin/restaurants' },
-  { label: 'Branch Approvals', icon: '✅', path: '/admin/branch-approvals' },
-  { label: 'Cities',        icon: '🏙️', path: '/admin/cities' },
-  { label: 'Tag Candidates', icon: '🏷️', path: '/admin/tag-candidates' },
-  { label: 'Captain Logs',  icon: '📜', path: '/admin/captain-logs' },
-  { label: 'Directory',     icon: '📖', path: '/admin/directory' },
-  { label: 'Orders',        icon: '📦', path: '/admin/orders' },
-  { label: 'Customers',     icon: '👥', path: '/admin/customers' },
-  { label: 'Personas',      icon: '👤', path: '/admin/personas' },
-  { label: 'Issues',        icon: '🚨', path: '/admin/issues' },
-  { label: 'Delivery Disputes', icon: '⚠️', path: '/admin/delivery-disputes' },
-  { label: 'Referrals',     icon: '🎯', path: '/admin/referrals' },
-  { label: 'Settlements',   icon: '💸', path: '/admin/settlements' },
-  { label: 'Financials',    icon: '💰', path: '/admin/financials' },
-  { label: 'Fees',          icon: '⚠️', path: '/admin/fees' },
-  { label: 'Coupons',       icon: '🎫', path: '/admin/coupons' },
-  { label: 'Coupon Codes',  icon: '🔖', path: '/admin/coupon-codes' },
-  { label: 'Marketing',     icon: '📢', path: '/admin/marketing' },
-  { label: 'Analytics',     icon: '📊', path: '/admin/analytics' },
-  { label: 'Pincodes',      icon: '📍', path: '/admin/pincodes' },
-  { label: 'Logs',          icon: '🔎', path: '/admin/logs' },
-  { label: 'DLQ',           icon: '☠️',  path: '/admin/dlq' },
-  { label: 'Sync Logs',     icon: '🔁', path: '/admin/sync-logs' },
-  { label: 'Activity',      icon: '🔴', path: '/admin/activity' },
-  { label: 'Abuse',         icon: '🛡️', path: '/admin/abuse' },
-  { label: 'Admins',        icon: '👤', path: '/admin/admins' },
-  { label: 'Usernames',     icon: '🆔', path: '/admin/usernames' },
-  { label: 'Logistics',     icon: '🚚', path: '/admin/logistics' },
-  { label: 'Festivals',     icon: '🎉', path: '/admin/festivals' },
-  { label: 'Platform Marketing', icon: '📈', path: '/admin/platform-marketing' },
-  { label: 'Platform Settings',  icon: '⚙️',  path: '/admin/settings' },
+// Sidebar nav, organised into 9 named sections (Sidebar.tsx renders the
+// `header` as a group label and skips the header for empty groups). Each
+// item keeps its original { label, icon, path }. Two labels were renamed
+// here: 'Campaign Tpls' → 'Campaign Templates' and 'Marketing'
+// (/admin/marketing) → 'Message Logs' (now grouped under MONITORING).
+// NOTE: '/admin/branch-approvals' is not enumerated in the section spec;
+// it is a restaurant-branch onboarding surface so it lives in RESTAURANTS
+// (after Restaurants) rather than being dropped from the nav.
+const NAV_GROUPS: NavGroup[] = [
+  {
+    header: 'OVERVIEW',
+    items: [
+      { label: 'Overview', icon: '📊', path: '/admin/overview' },
+    ],
+  },
+  {
+    header: 'RESTAURANTS',
+    items: [
+      { label: 'Applications',     icon: '📝', path: '/admin/applications' },
+      { label: 'Restaurants',      icon: '🏪', path: '/admin/restaurants' },
+      { label: 'Branch Approvals', icon: '✅', path: '/admin/branch-approvals' },
+      { label: 'Cities',           icon: '🏙️', path: '/admin/cities' },
+      { label: 'Pincodes',         icon: '📍', path: '/admin/pincodes' },
+    ],
+  },
+  {
+    header: 'ORDERS & SUPPORT',
+    items: [
+      { label: 'Orders',            icon: '📦', path: '/admin/orders' },
+      { label: 'Customers',         icon: '👥', path: '/admin/customers' },
+      { label: 'Issues',            icon: '🚨', path: '/admin/issues' },
+      { label: 'Delivery Disputes', icon: '⚠️', path: '/admin/delivery-disputes' },
+    ],
+  },
+  {
+    header: 'MARKETPLACE',
+    items: [
+      { label: 'Directory',      icon: '📖', path: '/admin/directory' },
+      { label: 'Referrals',      icon: '🎯', path: '/admin/referrals' },
+      { label: 'Personas',       icon: '👤', path: '/admin/personas' },
+      { label: 'Captain Logs',   icon: '📜', path: '/admin/captain-logs' },
+      { label: 'Tag Candidates', icon: '🏷️', path: '/admin/tag-candidates' },
+      { label: 'Usernames',      icon: '🆔', path: '/admin/usernames' },
+    ],
+  },
+  {
+    header: 'ANALYTICS',
+    items: [
+      { label: 'Analytics',          icon: '📊', path: '/admin/analytics' },
+      { label: 'Logistics',          icon: '🚚', path: '/admin/logistics' },
+      { label: 'Platform Analytics', icon: '📈', path: '/admin/platform-analytics' },
+    ],
+  },
+  {
+    header: 'MARKETING',
+    items: [
+      { label: 'Templates',          icon: '📄', path: '/admin/templates' },
+      { label: 'Campaign Templates', icon: '✨', path: '/admin/campaign-templates' },
+      { label: 'Flows',              icon: '🔄', path: '/admin/flows' },
+      { label: 'Coupons',            icon: '🎫', path: '/admin/coupons' },
+      { label: 'Festivals',          icon: '🎉', path: '/admin/festivals' },
+    ],
+  },
+  {
+    header: 'FINANCIALS',
+    items: [
+      { label: 'Financials',      icon: '💰', path: '/admin/financials' },
+      { label: 'Payouts',         icon: '💸', path: '/admin/settlements' },
+      { label: 'Fee Attribution', icon: '⚠️', path: '/admin/fees' },
+    ],
+  },
+  {
+    header: 'MONITORING',
+    items: [
+      { label: 'Logs',         icon: '🔎', path: '/admin/logs' },
+      { label: 'DLQ',          icon: '☠️',  path: '/admin/dlq' },
+      { label: 'Sync Logs',    icon: '🔁', path: '/admin/sync-logs' },
+      { label: 'Activity',     icon: '🔴', path: '/admin/activity' },
+      { label: 'Abuse',        icon: '🛡️', path: '/admin/abuse' },
+      { label: 'Message Logs', icon: '📢', path: '/admin/marketing' },
+    ],
+  },
+  {
+    header: 'SETTINGS',
+    items: [
+      { label: 'Platform Settings', icon: '⚙️', path: '/admin/settings' },
+      { label: 'Admins',            icon: '👤', path: '/admin/admins' },
+    ],
+  },
 ];
 
 // City Ops nav — city captains today see exactly the Cities surface
@@ -66,20 +118,32 @@ const SALES_PATHS: ReadonlySet<string> = new Set<string>([
   '/admin/restaurants',
 ]);
 
-function navItemsForRole(role: string | undefined | null): NavItem[] {
+// Role filtering is applied PER GROUP and empty groups are dropped, so a
+// restricted role still sees its surfaces under the relevant section
+// headers (e.g. city_ops → Cities under RESTAURANTS, Personas under
+// MARKETPLACE). CITY_OPS_PATHS / SALES_PATHS membership and the sales
+// "(read-only)" relabel are unchanged from the prior flat behaviour.
+function navGroupsForRole(role: string | undefined | null): NavGroup[] {
   if (role === 'city_ops') {
-    return NAV_ITEMS.filter((n) => CITY_OPS_PATHS.has(n.path));
+    return NAV_GROUPS
+      .map((g) => ({ ...g, items: g.items.filter((n) => CITY_OPS_PATHS.has(n.path)) }))
+      .filter((g) => g.items.length > 0);
   }
   if (role === 'sales') {
-    return NAV_ITEMS
-      .filter((n) => SALES_PATHS.has(n.path))
-      .map((n) => ({ ...n, label: `${n.label} (read-only)` }));
+    return NAV_GROUPS
+      .map((g) => ({
+        ...g,
+        items: g.items
+          .filter((n) => SALES_PATHS.has(n.path))
+          .map((n) => ({ ...n, label: `${n.label} (read-only)` })),
+      }))
+      .filter((g) => g.items.length > 0);
   }
-  return NAV_ITEMS;
+  return NAV_GROUPS;
 }
 
 const TITLE_BY_PATH: Record<string, string> = Object.fromEntries(
-  NAV_ITEMS.map((n) => [n.path, n.label]),
+  NAV_GROUPS.flatMap((g) => g.items).map((n) => [n.path, n.label]),
 );
 
 interface AdminShellProps { children: ReactNode }
@@ -94,12 +158,12 @@ function AdminShell({ children }: AdminShellProps) {
   }, [pathname]);
 
   const title = TITLE_BY_PATH[pathname || ''] || 'Admin';
-  const navItems = navItemsForRole(adminUser?.role);
+  const navGroups = navGroupsForRole(adminUser?.role);
 
   return (
     <div id="pg-admin" className="flex min-h-screen">
       <Sidebar
-        navGroups={[{ header: '', items: navItems }]}
+        navGroups={navGroups}
         onLogout={logout}
         brandLabel="GullyBite Admin"
         brandIcon={'⚡'}
