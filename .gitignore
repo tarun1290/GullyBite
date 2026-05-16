@@ -118,3 +118,8 @@ prompts/settlement-descriptive-audit.md
 prompts/settlement-hardening.md
 prompts/settlement-prompt-1.md
 prompts/settlement-prompt-2.md
+
+# Defensive — env backup files
+.env.backup
+.env.bak
+.env.*.backup
