@@ -388,6 +388,13 @@ function mapMenuItemToMetaProduct(item, restaurant, branch) {
     desc = `${item.name || 'Menu item'} — Fresh from ${brandName}`;
   }
 
+  // Trust signal — surface the loved/ordered rating in the catalog
+  // description when there's a meaningful sample (>= 5 rated orders).
+  // The desc.substring(0, 1000) on the return below absorbs overflow.
+  if (item.trust_metrics?.average_rating > 0 && item.trust_metrics?.times_ordered >= 5) {
+    desc += ` | ⭐ ${item.trust_metrics.average_rating} (${item.trust_metrics.times_ordered} ratings)`;
+  }
+
   // Sanitize retailer_id: only alphanumeric, hyphens, underscores (Meta requirement)
   const safeRetailerId = (item.retailer_id || String(item._id)).replace(/[^a-zA-Z0-9_-]/g, '-').substring(0, 100);
 

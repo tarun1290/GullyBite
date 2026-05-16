@@ -183,6 +183,8 @@ app.use('/webhooks/catalog', require('./src/webhooks/catalog'));
 app.use('/webhooks/delivery', require('./src/webhooks/delivery'));
 app.use('/webhooks/directory', require('./src/webhooks/directory'));
 app.use('/webhooks/checkout', require('./src/webhooks/checkout'));
+// Petpooja's sandbox configuration uses the singular /webhook/pos path.
+app.use('/webhook/pos', require('./src/webhooks/pos'));
 app.use('/webhooks/petpooja', require('./src/webhooks/petpoojaCallback'));
 
 // ─── PUBLIC INLINE HANDLERS ──────────────────────────────────

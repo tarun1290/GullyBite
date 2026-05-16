@@ -171,7 +171,7 @@ async function refreshTrustMetrics(restaurantId) {
   log.info({ restaurantId }, 'Refreshing trust metrics');
 
   const items = await col('menu_items').find({ restaurant_id: restaurantId, is_available: true }).toArray();
-  if (!items.length) return { processed: 0 };
+  if (!items.length) return { processed: 0, updatedBranchIds: [] };
 
   // Calculate metrics for all items
   const allMetrics = [];
@@ -189,11 +189,64 @@ async function refreshTrustMetrics(restaurantId) {
   const p90Index = Math.floor(orderCounts.length * 0.9);
   const allItemsContext = { _p90OrderCount: orderCounts[p90Index] || 50 };
 
+  // ── LOVED SIGNAL AGGREGATION ──────────────────────────────
+  // Per-item "loved" ratio from the feedback flow's CheckboxGroup.
+  // loved_item_ids holds menu_items._id strings (flow path only;
+  // absent on button/text rows — those contribute no signal).
+  // times_ordered counts rated DELIVERED order lines (inner join to
+  // order_ratings) so the denominator matches the loved opportunity.
+  const lovedMap = new Map();
+  const orderedMap = new Map();
+  try {
+    const lovedAgg = await col('order_ratings').aggregate([
+      { $match: { restaurant_id: restaurantId, loved_item_ids: { $exists: true, $type: 'array' }, 'loved_item_ids.0': { $exists: true } } },
+      { $unwind: '$loved_item_ids' },
+      { $group: { _id: '$loved_item_ids', times_loved: { $sum: 1 } } },
+    ]).toArray();
+    for (const row of lovedAgg) lovedMap.set(String(row._id), row.times_loved);
+
+    const orderedAgg = await col('orders').aggregate([
+      { $match: { restaurant_id: restaurantId, status: 'DELIVERED' } },
+      { $unwind: '$items' },
+      { $lookup: { from: 'order_ratings', localField: '_id', foreignField: 'order_id', as: '_rating' } },
+      { $match: { '_rating.0': { $exists: true } } },
+      { $group: { _id: '$items.menu_item_id', times_ordered: { $sum: 1 } } },
+    ]).toArray();
+    for (const row of orderedAgg) orderedMap.set(String(row._id), row.times_ordered);
+  } catch (e) {
+    log.warn({ err: e, restaurantId }, 'Loved signal aggregation failed — proceeding without loved override');
+  }
+
+  // Branch ids whose catalog-visible average_rating changed this run;
+  // handed back to the caller (cron) for a targeted catalog re-sync.
+  const updatedBranchIds = new Set();
+
   // Assign trust tags and generate descriptions
   const bulkOps = [];
   for (const metrics of allMetrics) {
     const trustTag = assignTrustTag(metrics, allItemsContext);
     const metaDescription = generateMetaDescription({ ...metrics, trust_tag: trustTag }, metrics._item);
+
+    // Loved-signal override: with a meaningful denominator (>= 5 rated
+    // delivered orders containing this item) replace average_rating with
+    // the loved ratio scaled to /5. Below the threshold the existing
+    // order_ratings-derived average is kept unchanged.
+    const timesLoved = lovedMap.get(String(metrics.item_id)) || 0;
+    const timesOrdered = orderedMap.get(String(metrics.item_id)) || 0;
+    let finalAverageRating = metrics.average_rating;
+    if (timesOrdered >= 5) {
+      finalAverageRating = Math.round((timesLoved / timesOrdered) * 5 * 10) / 10;
+    }
+
+    // Track branch(es) of items whose average_rating actually moved so
+    // only affected branches get a catalog re-sync downstream (Step 4).
+    const prevAverageRating = metrics._item?.trust_metrics?.average_rating;
+    if (finalAverageRating !== prevAverageRating) {
+      if (metrics._item?.branch_id) updatedBranchIds.add(String(metrics._item.branch_id));
+      if (Array.isArray(metrics._item?.branch_ids)) {
+        for (const b of metrics._item.branch_ids) updatedBranchIds.add(String(b));
+      }
+    }
 
     bulkOps.push({
       updateOne: {
@@ -202,7 +255,7 @@ async function refreshTrustMetrics(restaurantId) {
           trust_metrics: {
             fulfilled_order_count: metrics.fulfilled_order_count,
             rating_count: metrics.rating_count,
-            average_rating: metrics.average_rating,
+            average_rating: finalAverageRating,
             reorder_count: metrics.reorder_count,
             reorder_rate: metrics.reorder_rate,
             favorite_count: metrics.favorite_count,
@@ -212,6 +265,8 @@ async function refreshTrustMetrics(restaurantId) {
             last_30_day_average_rating: metrics.last_30_day_average_rating,
             public_rating_enabled: metrics.public_rating_enabled,
             trust_tag: trustTag,
+            times_loved: timesLoved,
+            times_ordered: timesOrdered,
             calculated_at: new Date(),
           },
           meta_description_generated: metaDescription,
@@ -226,9 +281,9 @@ async function refreshTrustMetrics(restaurantId) {
   }
 
   const elapsed = Date.now() - startTime;
-  log.info({ restaurantId, items: allMetrics.length, elapsedMs: elapsed }, 'Trust metrics refreshed');
+  log.info({ restaurantId, items: allMetrics.length, elapsedMs: elapsed, changedBranches: updatedBranchIds.size }, 'Trust metrics refreshed');
 
-  return { processed: allMetrics.length, elapsed };
+  return { processed: allMetrics.length, elapsed, updatedBranchIds: [...updatedBranchIds] };
 }
 
 // ─── GET TOP TRUSTED ITEMS FOR PRE-MENU MESSAGE ─────────────

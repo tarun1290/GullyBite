@@ -46,8 +46,21 @@ router.get('/trust-refresh', async (req, res) => {
     let processed = 0, failed = 0;
     for (const r of restaurants) {
       try {
-        await itemTrust.refreshTrustMetrics(String(r._id));
+        const trustResult = await itemTrust.refreshTrustMetrics(String(r._id));
         processed++;
+
+        // Auto catalog sync — only the branches whose average_rating
+        // actually moved this run, so the refreshed rating reaches Meta
+        // without waiting for a manual sync. Each sync is isolated:
+        // a failure must not crash the trust-refresh cron.
+        for (const branchId of (trustResult?.updatedBranchIds || [])) {
+          try {
+            await catalog.syncBranchCatalog(branchId);
+            log.info({ branchId }, `auto catalog sync triggered for branch ${branchId} after trust metrics update`);
+          } catch (syncErr) {
+            log.error({ err: syncErr, branchId }, 'auto catalog sync failed after trust metrics update');
+          }
+        }
       } catch (e) {
         log.error({ err: e, restaurantName: r.business_name }, 'Trust refresh failed for restaurant');
         failed++;

@@ -134,6 +134,39 @@ router.delete('/branches/:branchId/integration', requireAdmin, async (req, res) 
   }
 });
 
+// POST /branches/:branchId/sync
+// Admin-triggered full menu re-pull from Petpooja for a branch. Resolves
+// the active integration row, then hands off to the shared posSync
+// service in 'full_replace' mode.
+router.post('/branches/:branchId/sync', requireAdmin, async (req, res) => {
+  try {
+    const { branchId } = req.params;
+
+    const integration = await col('restaurant_integrations').findOne({
+      platform: 'petpooja',
+      branch_id: branchId,
+      is_active: true,
+    });
+    if (!integration) {
+      return res.status(404).json({ error: 'No active Petpooja integration for this branch' });
+    }
+
+    const branch = await col('branches').findOne({ _id: branchId });
+
+    const result = await require('../services/posSync').triggerSync(
+      'petpooja',
+      String(integration._id),
+      branch.restaurant_id,
+      'full_replace',
+    );
+
+    return res.json({ success: true, result });
+  } catch (err) {
+    log.error({ err: err?.message, branchId: req.params.branchId }, 'POST sync failed');
+    return res.status(500).json({ error: err.message });
+  }
+});
+
 // ═══════════════════════════════════════════════════════════
 // SECTION B: STORE STATUS (NO AUTH — called by Petpooja)
 // ═══════════════════════════════════════════════════════════

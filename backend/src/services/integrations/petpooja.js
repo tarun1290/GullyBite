@@ -7,10 +7,6 @@
 //   access_token — restaurant-specific token
 //   outlet_id    — PetPooja restaurantid (shown in PetPooja dashboard)
 
-// POS_DISABLED — this module is disabled. Remove this guard to re-enable.
-module.exports = {};
-return;
-
 const axios = require('axios');
 const { POS_INTEGRATIONS_ENABLED } = require('../../config/features');
 const log = require('../../utils/logger').child({ component: 'PetPooja' });
@@ -33,14 +29,15 @@ async function fetchMenu(integration) {
     log.info('fetchMenu skipped — POS integrations disabled');
     return { categories: [], items: [] };
   }
-  const { api_key, access_token, outlet_id } = integration;
+  const { app_key, api_key, access_token, outlet_id } = integration;
+  const resolvedKey = app_key || api_key;
 
-  if (!api_key || !access_token || !outlet_id) {
+  if (!resolvedKey || !access_token || !outlet_id) {
     throw new Error('PetPooja: api_key, access_token and outlet_id are all required');
   }
 
   const payload = {
-    app_key      : api_key,
+    app_key      : resolvedKey,
     access_token : access_token,
     restaurantid : outlet_id,
   };

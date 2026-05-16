@@ -246,7 +246,7 @@ async function run() {
               r._id,
               p.customer_id,
               'reorder_suggestion',
-              topItem ? { top_item: topItem } : {},
+              topItem ? { last_item: topItem } : {},
             );
             totals.reorder_suggestion++;
             await sleep(CUSTOMER_GAP_MS);

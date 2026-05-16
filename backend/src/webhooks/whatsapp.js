@@ -3394,7 +3394,7 @@ const sendRatingRequest = async (orderId, pid, token, to) => {
     // the findOne above and we map off it directly — NOT new ObjectId()
     // (that throws on a non-hex UUID and there is no second lookup).
     const ordered_items = Array.isArray(order.items)
-      ? order.items.map((i) => ({ id: String(i.item_id || i._id), title: i.name }))
+      ? order.items.map((i) => ({ id: String(i.menu_item_id || i.item_id || i._id), title: i.name }))
       : [];
 
     // Try WhatsApp Flow — check platform_settings first, then env var
