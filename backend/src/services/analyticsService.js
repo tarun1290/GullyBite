@@ -5,9 +5,9 @@
 // Marketing Analytics tab and the admin Platform Marketing section.
 //
 // Each section function is cached for 1h in the `_cache` collection
-// (6h at the platform level). Failures never throw — the top-level
-// getFullDashboard parallelises via Promise.allSettled so one bad
-// section can't take down the page.
+// (6h at the platform level). Failures never throw — each per-section
+// route handles its own error so one bad section can't take down the
+// rest of the page.
 
 'use strict';
 
@@ -184,66 +184,6 @@ async function getCustomerGrowth(restaurantId, period = '30d') {
 }
 
 // ---------------------------------------------------------------------
-// 4. Revenue insights — paid-order totals + AOV + campaign-attributed
-//    revenue share.
-// ---------------------------------------------------------------------
-async function getRevenueInsights(restaurantId, period = '30d') {
-  return cache.getCached(key('revenue', restaurantId, period), async () => {
-    const match = { restaurant_id: restaurantId, payment_status: 'paid' };
-    const start = periodStart(period);
-    if (start) match.created_at = { $gte: start };
-
-    const [totals, byDay, campaignRevenueAgg] = await Promise.all([
-      col('orders').aggregate([
-        { $match: match },
-        { $group: {
-            _id: null,
-            orders: { $sum: 1 },
-            revenue_rs: { $sum: { $ifNull: ['$total_rs', 0] } },
-            unique_customers: { $addToSet: '$customer_id' },
-        } },
-      ]).toArray(),
-      col('orders').aggregate([
-        { $match: match },
-        { $group: {
-            _id: { $dateToString: { format: '%Y-%m-%d', date: '$created_at', timezone: 'Asia/Kolkata' } },
-            orders: { $sum: 1 },
-            revenue_rs: { $sum: { $ifNull: ['$total_rs', 0] } },
-        } },
-        { $sort: { _id: 1 } },
-      ]).toArray(),
-      col('marketing_campaigns').aggregate([
-        { $match: { restaurant_id: restaurantId, ...(start ? { created_at: { $gte: start } } : {}) } },
-        { $group: {
-            _id: null,
-            revenue_rs: { $sum: { $ifNull: ['$stats.revenue_attributed_rs', 0] } },
-            spend_rs:   { $sum: { $ifNull: ['$actual_cost_rs', 0] } },
-        } },
-      ]).toArray(),
-    ]);
-
-    const t = totals[0] || {};
-    const orders = Number(t.orders || 0);
-    const revenue = Number(t.revenue_rs || 0);
-    const uniq = Array.isArray(t.unique_customers) ? t.unique_customers.length : 0;
-    const camp = campaignRevenueAgg[0] || {};
-
-    return {
-      period: normalisePeriod(period),
-      orders,
-      unique_customers: uniq,
-      revenue_rs: revenue,
-      aov_rs: safeDiv(revenue, orders),
-      campaign_attributed_revenue_rs: Number(camp.revenue_rs || 0),
-      campaign_attributed_share: safeDiv(camp.revenue_rs, revenue),
-      marketing_spend_rs: Number(camp.spend_rs || 0),
-      net_marketing_contribution_rs: Number(camp.revenue_rs || 0) - Number(camp.spend_rs || 0),
-      by_day: byDay.map((r) => ({ date: r._id, orders: r.orders, revenue_rs: r.revenue_rs })),
-    };
-  }, SECTION_TTL);
-}
-
-// ---------------------------------------------------------------------
 // 5. Feedback insights — rating distribution, review link CTR, positive
 //    share, breakdown by source.
 // ---------------------------------------------------------------------
@@ -350,33 +290,6 @@ async function getLoyaltySummary(restaurantId, period = '30d') {
       redemption_value_rs: redeemPts / (ratio > 0 ? ratio : 1),
     };
   }, SECTION_TTL);
-}
-
-// ---------------------------------------------------------------------
-// Orchestrator — kicks off all six in parallel; a failing section
-// resolves to null so the page can still render the rest.
-// ---------------------------------------------------------------------
-async function getFullDashboard(restaurantId, period = '30d') {
-  const tasks = [
-    ['campaigns', () => getCampaignSummary(restaurantId, period)],
-    ['journeys',  () => getJourneySummary(restaurantId, period)],
-    ['customers', () => getCustomerGrowth(restaurantId, period)],
-    ['revenue',   () => getRevenueInsights(restaurantId, period)],
-    ['feedback',  () => getFeedbackInsights(restaurantId, period)],
-    ['loyalty',   () => getLoyaltySummary(restaurantId, period)],
-  ];
-  const settled = await Promise.allSettled(tasks.map(([, fn]) => fn()));
-  const out = { period: normalisePeriod(period) };
-  settled.forEach((r, i) => {
-    const name = tasks[i][0];
-    if (r.status === 'fulfilled') {
-      out[name] = r.value;
-    } else {
-      log.warn({ restaurantId, section: name, err: r.reason }, 'analytics section failed');
-      out[name] = null;
-    }
-  });
-  return out;
 }
 
 // ---------------------------------------------------------------------
@@ -489,10 +402,8 @@ module.exports = {
   getCampaignSummary,
   getJourneySummary,
   getCustomerGrowth,
-  getRevenueInsights,
   getFeedbackInsights,
   getLoyaltySummary,
-  getFullDashboard,
   getPlatformSnapshot,
   // exported for tests / admin cache-invalidation
   PERIOD_DAYS,

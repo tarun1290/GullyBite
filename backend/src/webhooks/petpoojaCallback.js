@@ -42,7 +42,7 @@ const TERMINAL_STATES = new Set([
   'REJECTED_BY_RESTAURANT', 'RESTAURANT_TIMEOUT', 'CANCELLED', 'DELIVERED',
 ]);
 
-router.post('/', express.json({ limit: '64kb' }), (req, res) => {
+router.post('/callback', express.json({ limit: '64kb' }), (req, res) => {
   // Respond 200 first so Petpooja never retries on a slow handler.
   res.json({ received: true });
 

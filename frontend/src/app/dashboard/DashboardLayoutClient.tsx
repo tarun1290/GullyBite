@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { usePathname } from 'next/navigation';
 import ProtectedRoute from '../../components/ProtectedRoute';
-import Sidebar, { type NavItem } from '../../components/Sidebar';
+import Sidebar, { type NavItem, type NavGroup } from '../../components/Sidebar';
 import Navbar from '../../components/Navbar';
 import WaConnectBanner from '../../components/restaurant/WaConnectBanner';
 import WabaTokenExpiryBanner from '../../components/restaurant/WabaTokenExpiryBanner';
@@ -18,38 +18,52 @@ import LiveIndicator from '../../components/shared/LiveIndicator';
 import NewOrderPopup from '../../components/restaurant/NewOrderPopup';
 import type { Restaurant, WabaAccount } from '../../types';
 
-const NAV_ITEMS: NavItem[] = [
-  { label: 'Overview',            icon: '🏠', path: '/dashboard/overview' },
-  { label: 'Orders',              icon: '📦', path: '/dashboard/orders' },
-  { label: 'Menu',                icon: '🍽', path: '/dashboard/menu' },
-  { label: 'Messages',            icon: '💬', path: '/dashboard/messages' },
-  { label: 'Marketing',           icon: '📣', path: '/dashboard/marketing' },
-  { label: 'Campaigns',           icon: '✨', path: '/dashboard/campaigns' },
-  { label: 'Analytics',           icon: '📊', path: '/dashboard/analytics' },
-  { label: 'Marketing Analytics', icon: '📈', path: '/dashboard/marketing-analytics' },
-  { label: 'Reputation',          icon: '⭐', path: '/dashboard/reputation' },
-  { label: 'Loyalty',             icon: '🎖', path: '/dashboard/loyalty' },
-  { label: 'Dine-in',             icon: '🍽', path: '/dashboard/dine-in' },
-  { label: 'Customers',           icon: '👥', path: '/dashboard/customers' },
-  { label: 'Payments',            icon: '💰', path: '/dashboard/payments' },
-  { label: 'Settings',            icon: '⚙', path: '/dashboard/settings' },
+// Restaurant sidebar nav, grouped. Each group renders a small header in
+// the Sidebar; items keep their { label, icon, path } shape and order.
+const NAV_GROUPS: NavGroup[] = [
+  { header: 'OPERATIONS', items: [
+    { label: 'Overview', icon: '🏠', path: '/dashboard/overview' },
+    { label: 'Orders',   icon: '📦', path: '/dashboard/orders' },
+    { label: 'Menu',     icon: '🍽', path: '/dashboard/menu' },
+    { label: 'Messages', icon: '💬', path: '/dashboard/messages' },
+  ] },
+  { header: 'MARKETING', items: [
+    { label: 'Marketing', icon: '✨', path: '/dashboard/marketing' },
+  ] },
+  { header: 'ANALYTICS', items: [
+    { label: 'Analytics',  icon: '📊', path: '/dashboard/analytics' },
+    { label: 'Reputation', icon: '⭐', path: '/dashboard/reputation' },
+  ] },
+  { header: 'FINANCE', items: [
+    { label: 'Payments', icon: '💰', path: '/dashboard/payments' },
+  ] },
+  { header: 'SETTINGS', items: [
+    { label: 'Settings', icon: '⚙', path: '/dashboard/settings' },
+  ] },
 ];
 
-// Captain surfaces — only shown when WhatsApp is connected, since the
-// captain feature is gated on a working WABA. Spliced in right after
-// Marketing Analytics inside DashboardShell so they sit next to the
-// other analytics surface in the sidebar.
+// Captain growth surfaces — only shown when WhatsApp is connected (the
+// captain feature is gated on a working WABA). Spliced in as a dedicated
+// 'GROWTH' group positioned between MARKETING and ANALYTICS (mid-funnel:
+// listing + referrals sit between acquisition and measurement). The
+// splice is driven by GROUP POSITION (header === 'MARKETING'), not a
+// route-path anchor, so it can't silently break when routes move again.
 //
-// The captain-listing page itself still exists at /dashboard/captain-listing
-// (reached from the "Claim your listing" link inside the new referrals
-// page when the merchant is unlinked) — it's just no longer in the
-// sidebar. The referrals surface now subsumes both flows.
+// captain-listing was folded into the Referrals tab (Prompt 6); this
+// entry deep-links straight to that tab via ?tab=referrals.
 const CAPTAIN_NAV_ITEMS: NavItem[] = [
-  { label: 'GullyBite Referrals', icon: '🔗', path: '/dashboard/referrals' },
+  { label: 'GullyBite Referrals', icon: '🔗', path: '/dashboard/marketing?tab=referrals' },
 ];
 
+const GROWTH_GROUP: NavGroup = { header: 'GROWTH', items: CAPTAIN_NAV_ITEMS };
+
+// Navbar title per route. Keyed by pathname (usePathname() strips the
+// query) — captain entries carry a query string so they never collide
+// with the bare /dashboard/marketing → 'Marketing' mapping.
 const TITLE_BY_PATH: Record<string, string> = {
-  ...Object.fromEntries(NAV_ITEMS.map((n) => [n.path, n.label])),
+  ...Object.fromEntries(
+    NAV_GROUPS.flatMap((g) => g.items).map((n) => [n.path, n.label]),
+  ),
   ...Object.fromEntries(CAPTAIN_NAV_ITEMS.map((n) => [n.path, n.label])),
 };
 
@@ -92,22 +106,16 @@ function DashboardShell({ children }: DashboardShellProps) {
 
   const waConnected = computeWaConnected(restaurant);
 
-  // Splice the captain items right after Marketing Analytics when WA
-  // is connected. Falls back to appending at the end if the marketing
-  // analytics row ever gets removed from NAV_ITEMS, so the captain
-  // surfaces stay reachable even if the surrounding nav layout drifts.
-  const navItems = useMemo<NavItem[]>(() => {
-    if (!waConnected) return NAV_ITEMS;
-    const out: NavItem[] = [];
-    let inserted = false;
-    for (const item of NAV_ITEMS) {
-      out.push(item);
-      if (!inserted && item.path === '/dashboard/marketing-analytics') {
-        out.push(...CAPTAIN_NAV_ITEMS);
-        inserted = true;
-      }
+  // When WA is connected, insert the GROWTH group immediately after the
+  // MARKETING group. Driven by group position (the MARKETING header),
+  // NOT a route-path anchor — route moves can't break this again.
+  const navGroups = useMemo<NavGroup[]>(() => {
+    if (!waConnected) return NAV_GROUPS;
+    const out: NavGroup[] = [];
+    for (const grp of NAV_GROUPS) {
+      out.push(grp);
+      if (grp.header === 'MARKETING') out.push(GROWTH_GROUP);
     }
-    if (!inserted) out.push(...CAPTAIN_NAV_ITEMS);
     return out;
   }, [waConnected]);
 
@@ -120,7 +128,7 @@ function DashboardShell({ children }: DashboardShellProps) {
   return (
     <div id="pg-dash" className="flex min-h-screen">
       <Sidebar
-        navItems={navItems}
+        navGroups={navGroups}
         onLogout={logout}
         restaurantName={displayName}
         open={sidebarOpen}

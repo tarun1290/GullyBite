@@ -3,6 +3,11 @@
 import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
 import { useToast } from '../../../components/Toast';
+// Captain-listing was merged in (its /dashboard/captain-listing route
+// is removed). It renders inline here via a toggle from Discovery,
+// replacing the two former cross-route links. Verbatim component —
+// only its reach changed (route link → in-tab panel).
+import CaptainListingPanel from './CaptainListingPanel';
 import {
   getCaptainListing,
   getReferralLinks,
@@ -57,9 +62,10 @@ const EMPTY_SUMMARY: RestaurantReferralsSummary = {
   total_referral_fee_rs: 0,
 };
 
-export default function ReferralsPage() {
+export default function ReferralsTab() {
   const { showToast } = useToast();
 
+  const [showListingPanel, setShowListingPanel] = useState<boolean>(false);
   const [listing, setListing] = useState<CaptainListingStatus | null>(null);
   const [listingError, setListingError] = useState<string | null>(null);
   const [listingLoading, setListingLoading] = useState<boolean>(true);
@@ -171,6 +177,24 @@ export default function ReferralsPage() {
 
   const recent = referrals.slice(0, 10);
 
+  // Captain-listing absorbed from the deleted /dashboard/captain-listing
+  // route. Reached via the Discovery section's manage/claim affordance;
+  // rendered inline (verbatim component) with a back control owned here.
+  if (showListingPanel) {
+    return (
+      <div id="tab-referrals">
+        <button
+          type="button"
+          className="btn-g btn-sm mb-3"
+          onClick={() => setShowListingPanel(false)}
+        >
+          ← Back to referrals
+        </button>
+        <CaptainListingPanel />
+      </div>
+    );
+  }
+
   return (
     <div id="tab-referrals">
       <div className="mb-4">
@@ -185,6 +209,7 @@ export default function ReferralsPage() {
         listing={listing}
         loading={listingLoading}
         error={listingError}
+        onManageListing={() => setShowListingPanel(true)}
       />
 
       {/* ── SECTION 2 — Referral performance ───────────────────── */}
@@ -221,9 +246,10 @@ interface DiscoverySectionProps {
   listing: CaptainListingStatus | null;
   loading: boolean;
   error: string | null;
+  onManageListing: () => void;
 }
 
-function DiscoverySection({ listing, loading, error }: DiscoverySectionProps) {
+function DiscoverySection({ listing, loading, error, onManageListing }: DiscoverySectionProps) {
   if (loading) {
     return (
       <div className="card">
@@ -249,9 +275,9 @@ function DiscoverySection({ listing, loading, error }: DiscoverySectionProps) {
         <div className="cb">
           <div className="notice">
             Claim your listing to get discovered on GullyBite Explore.{' '}
-            <Link href="/dashboard/captain-listing" className="text-acc">
+            <button type="button" onClick={onManageListing} className="text-acc bg-transparent border-0 p-0 cursor-pointer">
               Claim your listing →
-            </Link>
+            </button>
           </div>
         </div>
       </div>
@@ -284,9 +310,9 @@ function DiscoverySection({ listing, loading, error }: DiscoverySectionProps) {
             ) : null}
           </div>
           <div className="mt-2">
-            <Link href="/dashboard/captain-listing" className="text-sm text-dim hover:text-acc">
+            <button type="button" onClick={onManageListing} className="text-sm text-dim hover:text-acc bg-transparent border-0 p-0 cursor-pointer">
               Manage listing →
-            </Link>
+            </button>
           </div>
         </div>
       </div>

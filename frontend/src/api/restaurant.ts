@@ -1140,14 +1140,36 @@ export async function getCampaignSmartSendTime(): Promise<unknown> {
 
 // ── Marketing Analytics ─────────────────────────────────────────────
 
-export async function getMarketingAnalyticsDashboard(period: string = '30d'): Promise<unknown> {
-  const { data } = await client.get('/api/restaurant/marketing-analytics/dashboard', { params: { period } });
-  return data;
-}
+// The monolithic /dashboard endpoint + getMarketingAnalyticsDashboard were
+// retired — the marketing-analytics page was dismantled and its sections
+// distributed to /campaigns, /customers, /loyalty, /reputation. Each
+// surviving section has its own endpoint; responses are { ok, data }
+// where `data` is that section's shape (no full-dashboard envelope).
 
 export async function getMarketingAnalyticsSection(section: string, period: string = '30d'): Promise<unknown> {
   const { data } = await client.get(`/api/restaurant/marketing-analytics/${section}`, { params: { period } });
   return data;
+}
+
+// Named per-section wrappers (thin delegates over the generic helper).
+export async function getCampaignSummary(period: string = '30d'): Promise<unknown> {
+  return getMarketingAnalyticsSection('campaigns', period);
+}
+
+export async function getJourneySummary(period: string = '30d'): Promise<unknown> {
+  return getMarketingAnalyticsSection('journeys', period);
+}
+
+export async function getCustomerGrowth(period: string = '30d'): Promise<unknown> {
+  return getMarketingAnalyticsSection('customers', period);
+}
+
+export async function getLoyaltySummary(period: string = '30d'): Promise<unknown> {
+  return getMarketingAnalyticsSection('loyalty', period);
+}
+
+export async function getFeedbackInsights(period: string = '30d'): Promise<unknown> {
+  return getMarketingAnalyticsSection('feedback', period);
 }
 
 // ── Catalog Management ──────────────────────────────────────────────

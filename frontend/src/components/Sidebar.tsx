@@ -10,8 +10,16 @@ export interface NavItem {
   path: string;
 }
 
+// Grouped nav. A group with an empty `header` renders its items with no
+// header label (used by the admin sidebar, which is intentionally
+// ungrouped — it just wraps its flat list in one headerless group).
+export interface NavGroup {
+  header: string;
+  items: NavItem[];
+}
+
 interface SidebarProps {
-  navItems: NavItem[];
+  navGroups: NavGroup[];
   onLogout?: () => void;
   brandLabel?: string;
   brandIcon?: string;
@@ -21,7 +29,7 @@ interface SidebarProps {
 }
 
 export default function Sidebar({
-  navItems,
+  navGroups,
   onLogout,
   brandLabel = 'GullyBite',
   brandIcon = '🍜',
@@ -63,16 +71,23 @@ export default function Sidebar({
           </button>
         </div>
         <div className="sb-sec">
-          {navItems.map((item) => (
-            <Link
-              key={item.path}
-              href={item.path}
-              className={pathname === item.path ? 'sb-btn act' : 'sb-btn'}
-              onClick={handleNavClick}
-            >
-              <span className="ic">{item.icon}</span>
-              {item.label}
-            </Link>
+          {navGroups.map((group, gi) => (
+            <div key={group.header || `g${gi}`} className="sb-grp">
+              {group.header ? (
+                <div className="sb-grp-hd">{group.header}</div>
+              ) : null}
+              {group.items.map((item) => (
+                <Link
+                  key={item.path}
+                  href={item.path}
+                  className={pathname === item.path ? 'sb-btn act' : 'sb-btn'}
+                  onClick={handleNavClick}
+                >
+                  <span className="ic">{item.icon}</span>
+                  {item.label}
+                </Link>
+              ))}
+            </div>
           ))}
         </div>
         <div className="sb-foot">

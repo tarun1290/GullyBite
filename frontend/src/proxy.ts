@@ -13,6 +13,17 @@ const EXACT_REDIRECTS: Record<string, string> = {
   '/dashboard/feedback': '/dashboard/reputation',
   '/dashboard/restaurant': '/dashboard/settings',
   '/dashboard/penalties': '/dashboard/payments',
+  '/dashboard/marketing-analytics': '/dashboard/analytics',
+  // /dashboard/campaigns was renamed to /dashboard/marketing (canonical
+  // Marketing workspace; absorbed the old hub's Coupons + Messages tabs).
+  '/dashboard/campaigns': '/dashboard/marketing',
+  // Phase-2 consolidation: these standalone routes are now tabs inside
+  // /dashboard/marketing (captain-listing merged into the Referrals tab).
+  '/dashboard/customers': '/dashboard/marketing',
+  '/dashboard/loyalty': '/dashboard/marketing',
+  '/dashboard/referrals': '/dashboard/marketing',
+  '/dashboard/captain-listing': '/dashboard/marketing',
+  '/dashboard/dine-in': '/dashboard/marketing',
 };
 
 // Prefix redirects: any path at or under the key (e.g. a sub-path like
@@ -20,6 +31,16 @@ const EXACT_REDIRECTS: Record<string, string> = {
 const PREFIX_REDIRECTS: ReadonlyArray<readonly [string, string]> = [
   ['/dashboard/restaurant/', '/dashboard/settings'],
   ['/dashboard/penalties/', '/dashboard/payments'],
+  // Defensive: marketing-analytics removed; any sub-path → analytics.
+  ['/dashboard/marketing-analytics/', '/dashboard/analytics'],
+  // campaigns/ renamed to marketing/; any sub-path → marketing.
+  ['/dashboard/campaigns/', '/dashboard/marketing'],
+  // Phase-2 consolidation: folded into /dashboard/marketing tabs.
+  ['/dashboard/customers/', '/dashboard/marketing'],
+  ['/dashboard/loyalty/', '/dashboard/marketing'],
+  ['/dashboard/referrals/', '/dashboard/marketing'],
+  ['/dashboard/captain-listing/', '/dashboard/marketing'],
+  ['/dashboard/dine-in/', '/dashboard/marketing'],
 ];
 
 export function proxy(request: NextRequest) {
@@ -47,5 +68,19 @@ export const config = {
     '/dashboard/restaurant/:path*',
     '/dashboard/penalties',
     '/dashboard/penalties/:path*',
+    '/dashboard/marketing-analytics',
+    '/dashboard/marketing-analytics/:path*',
+    '/dashboard/campaigns',
+    '/dashboard/campaigns/:path*',
+    '/dashboard/customers',
+    '/dashboard/customers/:path*',
+    '/dashboard/loyalty',
+    '/dashboard/loyalty/:path*',
+    '/dashboard/referrals',
+    '/dashboard/referrals/:path*',
+    '/dashboard/captain-listing',
+    '/dashboard/captain-listing/:path*',
+    '/dashboard/dine-in',
+    '/dashboard/dine-in/:path*',
   ],
 };

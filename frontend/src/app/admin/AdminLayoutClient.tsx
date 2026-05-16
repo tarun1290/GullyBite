@@ -99,7 +99,7 @@ function AdminShell({ children }: AdminShellProps) {
   return (
     <div id="pg-admin" className="flex min-h-screen">
       <Sidebar
-        navItems={navItems}
+        navGroups={[{ header: '', items: navItems }]}
         onLogout={logout}
         brandLabel="GullyBite Admin"
         brandIcon={'⚡'}

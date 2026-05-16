@@ -7,6 +7,7 @@ import {
   getCustomerSegments,
   getCustomersBySegment,
 } from '../../../api/restaurant';
+import CustomerInsightsSection from './CustomerInsightsSection';
 
 interface SegmentMeta {
   label: string;
@@ -121,7 +122,7 @@ function SegmentCard({ seg, count, disabled, selected, onClick }: SegmentCardPro
   );
 }
 
-export default function CustomersPage() {
+export default function CustomersTab() {
   const [campaignsEnabled, setCampaignsEnabled] = useState<boolean>(false);
   const [stats, setStats] = useState<CustomerStats | null>(null);
   const [segments, setSegments] = useState<SegmentRow[]>([]);
@@ -280,6 +281,8 @@ export default function CustomersPage() {
           </div>
         </div>
       )}
+
+      <CustomerInsightsSection />
     </div>
   );
 }

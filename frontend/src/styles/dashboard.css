@@ -23,6 +23,24 @@ body { font-family: var(--font-body); background: var(--ink); color: var(--tx); 
 .sb-btn.act { background: var(--acc-glow); color: var(--acc); font-weight: 600; box-shadow: inset 3px 0 0 var(--acc); }
 .sb-btn .ic { font-size: .82rem; width: 18px; text-align: center; opacity: .7; }
 .sb-btn.act .ic { opacity: 1; }
+/* ── Sidebar nav group headers (restaurant IA grouping, Prompt 7) ──
+   Tiny uppercase muted label. NOT bold — size + letter-spacing +
+   colour do the work. The admin sidebar passes a single headerless
+   group so no header renders there (visually unchanged). Group
+   separation = header top margin (~18px); header→first-item gap =
+   header bottom margin (~8px). Headers stay visible on mobile (the
+   sidebar is a full-height slide-over with room; the headers are the
+   whole point of this IA pass — hiding them loses the cue). */
+.sb-grp-hd {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  color: var(--dim);
+  font-weight: 500;
+  padding: 0 .65rem;
+  margin: 1.1rem 0 .5rem;
+}
+.sb-sec > .sb-grp:first-child .sb-grp-hd { margin-top: .25rem; }
 .sb-foot { margin-top: auto; padding: 1rem; border-top: 1px solid var(--rim); background: #f5f6f8; }
 .sb-user { display: flex; align-items: center; gap: .6rem; }
 .sb-av { width: 34px; height: 34px; border-radius: 9px; flex-shrink: 0; background: linear-gradient(135deg, var(--acc), var(--gb-teal-700)); display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: .82rem; color: var(--gb-neutral-0); box-shadow: 0 2px 6px rgba(67, 56, 202, .2); }

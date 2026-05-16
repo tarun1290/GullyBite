@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState, type ChangeEvent, type FormEvent } fr
 import StatCard from '../../../components/StatCard';
 import SectionError from '../../../components/restaurant/analytics/SectionError';
 import PendingApprovalNotice, { isPendingApproval } from '../../../components/restaurant/PendingApprovalNotice';
+import FeedbackInsights from './FeedbackInsights';
 import {
   sendDineInFeedback,
   getFeedbackStats,
@@ -921,6 +922,11 @@ export default function ReputationPage() {
       />
 
       <SendDineIn onSend={handleSend} />
+
+      {/* Feedback-insights header strip lifted from the (being-deleted)
+          marketing-analytics page — funnel-adjacent, sits directly above
+          the existing Review Links settings without disturbing them. */}
+      <FeedbackInsights />
 
       <ReviewLinksSettings links={links} onSave={handleSaveLinks} />
     </div>

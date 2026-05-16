@@ -38,7 +38,7 @@ const EMPTY_EDIT_FORM: EditForm = {
   delivery_zones: '',
 };
 
-export default function CaptainListingPage() {
+export default function CaptainListingPanel() {
   const { showToast } = useToast();
 
   const [status, setStatus] = useState<CaptainListingStatus | null>(null);

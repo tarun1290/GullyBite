@@ -28,15 +28,7 @@ function readPeriod(req) {
 const restaurantRouter = express.Router();
 restaurantRouter.use(requireAuth);
 
-restaurantRouter.get('/dashboard', async (req, res) => {
-  try {
-    const out = await analytics.getFullDashboard(req.restaurantId, readPeriod(req));
-    res.json({ ok: true, data: out });
-  } catch (err) {
-    log.error({ err, restaurantId: req.restaurantId }, 'dashboard failed');
-    res.status(500).json({ ok: false, error: 'analytics_failed' });
-  }
-});
+// (Removed) GET /dashboard — monolithic endpoint retired; sections split into the per-section routes below.
 
 restaurantRouter.get('/campaigns', async (req, res) => {
   try {
@@ -58,15 +50,7 @@ restaurantRouter.get('/customers', async (req, res) => {
   }
 });
 
-restaurantRouter.get('/revenue', async (req, res) => {
-  try {
-    const out = await analytics.getRevenueInsights(req.restaurantId, readPeriod(req));
-    res.json({ ok: true, data: out });
-  } catch (err) {
-    log.error({ err, restaurantId: req.restaurantId }, 'revenue failed');
-    res.status(500).json({ ok: false, error: 'analytics_failed' });
-  }
-});
+// (Removed) GET /revenue — duplicate of /dashboard/analytics revenue; deleted (inconsistent query).
 
 restaurantRouter.get('/feedback', async (req, res) => {
   try {

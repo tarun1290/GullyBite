@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import StatCard from '../../../components/StatCard';
 import SectionError from '../../../components/restaurant/analytics/SectionError';
+import LoyaltySummarySection from './LoyaltySummarySection';
 import { useRestaurant } from '../../../contexts/RestaurantContext';
 import {
   getLoyaltyProgramConfig,
@@ -359,7 +360,7 @@ function DineInEntry({ onCredit, disabled }: DineInEntryProps) {
   );
 }
 
-export default function LoyaltyPage() {
+export default function LoyaltyTab() {
   const { restaurant } = useRestaurant();
   const campaignsEnabled = Boolean((restaurant as { campaigns_enabled?: boolean } | null)?.campaigns_enabled);
 
@@ -448,6 +449,8 @@ export default function LoyaltyPage() {
           Points earn automatically on paid orders; customers can redeem pre-checkout.
         </div>
       </div>
+
+      <LoyaltySummarySection />
 
       {!campaignsEnabled && (
         <div className="notice wa mb-4">

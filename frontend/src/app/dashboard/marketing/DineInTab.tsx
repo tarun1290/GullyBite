@@ -558,7 +558,7 @@ function ManualCheckinCard({ branch, onCheckedIn }: ManualCheckinCardProps) {
   );
 }
 
-export default function DineInPage() {
+export default function DineInTab() {
   const { restaurant } = useRestaurant();
 
   const [branches, setBranches] = useState<Branch[]>([]);
