@@ -147,7 +147,12 @@ async function fetchMenu(integration) {
 function parseWebhookEvent(payload) {
   try {
     const eventType = (payload.eventtype || payload.event_type || payload.type || '').toLowerCase();
-    const outletId = payload.restaurantid || payload.restaurant_id || payload.outlet_id || null;
+    const outletId = payload.restaurantid || payload.restaurant_id || payload.outlet_id ||
+                     payload.restaurants?.[0]?.details?.menusharingcode || null;
+    // Petpooja Push Menu: full menu payload has restaurants[] and items[] at root
+    if (!eventType && (Array.isArray(payload.restaurants) || Array.isArray(payload.items))) {
+      return { type: 'menu_update', outletId };
+    }
     if (eventType.includes('stock') || eventType.includes('itemstock')) {
       return { type: 'stock_update', outletId, items: parseStockUpdate(payload).items };
     }
