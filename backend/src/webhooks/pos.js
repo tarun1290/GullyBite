@@ -17,6 +17,38 @@ router.use(express.json({
   verify: (req, _res, buf) => { req.rawBody = buf; },
 }));
 
+// File-local inbound Authorization-secret guard for the PETPOOJA path only.
+// Mirrors the contract used by the sibling Petpooja files (webhooks/petpoojaCallback.js,
+// routes/petpoojaIntegration.js): raw secret in the Authorization header (NO "Bearer"
+// prefix), length guard BEFORE timingSafeEqual (which throws on length mismatch).
+// Returns true if authorized; on failure it has already written a non-2xx response
+// (so Petpooja sees a rejection) and returns false.
+function verifyPetpoojaAuth(req, res) {
+  const expected = process.env.PETPOOJA_CALLBACK_SECRET;
+  const provided = req.headers['authorization'];
+
+  if (!expected) {
+    console.error('[petpooja] FATAL: PETPOOJA_CALLBACK_SECRET not set');
+    res.status(500).json({ code: '500', status: 'failed', message: 'Server configuration error' });
+    return false;
+  }
+  if (!provided) {
+    res.status(401).json({ code: '401', status: 'failed', message: 'Unauthorized' });
+    return false;
+  }
+  // Length guard BEFORE timingSafeEqual — it throws on length mismatch.
+  if (Buffer.byteLength(provided) !== Buffer.byteLength(expected)) {
+    res.status(401).json({ code: '401', status: 'failed', message: 'Unauthorized' });
+    return false;
+  }
+  const cryptoLocal = require('crypto');
+  if (!cryptoLocal.timingSafeEqual(Buffer.from(provided), Buffer.from(expected))) {
+    res.status(401).json({ code: '401', status: 'failed', message: 'Unauthorized' });
+    return false;
+  }
+  return true;
+}
+
 const VALID_PLATFORMS = ['petpooja', 'urbanpiper', 'dotpe'];
 
 // Verifies platform-specific webhook signatures. Non-strict by default — returns
@@ -48,10 +80,16 @@ function verifyPosWebhookSignature(platform, rawBody, headers) {
 }
 
 router.post('/:platform', async (req, res) => {
+  const platform = (req.params.platform || '').toLowerCase();
+
+  // PETPOOJA path ONLY: verify the inbound Authorization secret and REJECT
+  // (401/500) before the early 200 ack and before any stock/menu processing.
+  // urbanpiper/dotpe are unaffected — they skip this guard entirely.
+  if (platform === 'petpooja' && !verifyPetpoojaAuth(req, res)) return;
+
   // Always respond 200 immediately — POS platforms retry on slow responses
   res.status(200).json({ received: true });
 
-  const platform = (req.params.platform || '').toLowerCase();
   if (!VALID_PLATFORMS.includes(platform)) {
     log.warn({ platform }, 'Unknown platform');
     return;

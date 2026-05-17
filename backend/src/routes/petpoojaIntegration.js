@@ -5,10 +5,12 @@
 //   (A) Admin-facing CRUD for restaurant_integrations rows — one row per
 //       (branch_id, platform: 'petpooja'). Stores the four credentials
 //       Petpooja's APIs need.
-//   (B) Inbound store-status endpoints — Petpooja calls these (no auth)
-//       to read or write the per-branch is_open flag, so a restaurant
-//       toggling closed in Petpooja's UI propagates to our customer
-//       order routing in the WhatsApp flow.
+//   (B) Inbound store-status endpoints — Petpooja calls these
+//       server-to-server, authenticated by the shared
+//       PETPOOJA_CALLBACK_SECRET in the Authorization header (see
+//       verifyPetpoojaAuth), to read or write the per-branch is_open
+//       flag, so a restaurant toggling closed in Petpooja's UI
+//       propagates to our customer order routing in the WhatsApp flow.
 //
 // Mount in ec2-server.js as a separate change. No menu sync logic here
 // (intentionally) — that lives in the dedicated petpoojaSync service
@@ -26,6 +28,38 @@ const memcache = require('../config/memcache');
 const log = require('../utils/logger').child({ component: 'PetpoojaIntegration' });
 
 const requireAdmin = requireAdminAuth();
+
+// Inbound-auth guard for Petpooja's server-to-server store-status calls.
+// Petpooja sends the shared secret as the raw Authorization header value
+// (no "Bearer" prefix). Fail-closed and constant-time compared. Responds
+// using THIS file's Petpooja body-contract (res.json, HTTP 200 envelope
+// with a string `code`) and returns false on any failure; true only on a
+// verified match. File-local on purpose — no shared module.
+function verifyPetpoojaAuth(req, res) {
+  const expected = process.env.PETPOOJA_CALLBACK_SECRET;
+  const provided = req.headers['authorization'];
+
+  if (!expected) {
+    console.error('[petpooja] FATAL: PETPOOJA_CALLBACK_SECRET not set');
+    res.json({ code: '500', status: 'failed', message: 'Server configuration error' });
+    return false;
+  }
+  if (!provided) {
+    res.json({ code: '401', status: 'failed', message: 'Unauthorized' });
+    return false;
+  }
+  // Length guard BEFORE timingSafeEqual — it throws on length mismatch.
+  if (Buffer.byteLength(provided) !== Buffer.byteLength(expected)) {
+    res.json({ code: '401', status: 'failed', message: 'Unauthorized' });
+    return false;
+  }
+  const crypto = require('crypto');
+  if (!crypto.timingSafeEqual(Buffer.from(provided), Buffer.from(expected))) {
+    res.json({ code: '401', status: 'failed', message: 'Unauthorized' });
+    return false;
+  }
+  return true;
+}
 
 // ═══════════════════════════════════════════════════════════
 // SECTION A: ADMIN CRUD
@@ -160,17 +194,21 @@ router.post('/branches/:branchId/sync', requireAdmin, async (req, res) => {
 });
 
 // ═══════════════════════════════════════════════════════════
-// SECTION B: STORE STATUS (NO AUTH — called by Petpooja)
+// SECTION B: STORE STATUS (Petpooja inbound — shared-secret auth)
 // ═══════════════════════════════════════════════════════════
 
 // Petpooja's servers call these endpoints server-to-server to read
 // or write the per-branch is_open flag (their UI toggle propagates
 // into our customer order routing). They cannot present a GullyBite
-// JWT, so there is no requireAuth. Minimum guard: the incoming restID
-// must resolve to a linked, active Petpooja integration via
-// _resolveStore (restaurant_integrations.outlet_id — there is no
+// JWT, so requests are authenticated by a shared secret:
+// verifyPetpoojaAuth requires req.headers.authorization to equal
+// PETPOOJA_CALLBACK_SECRET (constant-time compare, fail-closed if the
+// secret is unset) and is the first statement in each handler.
+// Defence-in-depth: the incoming restID must also resolve to a linked,
+// active Petpooja integration via _resolveStore
+// (restaurant_integrations.outlet_id — there is no
 // branches.petpooja_outlet_id field) before any branch mutation, so a
-// spoofed/random outlet id is rejected immediately.
+// spoofed/random outlet id is rejected too.
 
 // Resolve the (integration, branch) pair from Petpooja's restID. Returns
 // { integration, branch } or null when either lookup misses; callers
@@ -193,7 +231,7 @@ async function _resolveStore(restID) {
 // matches Petpooja's documented contract exactly: '1' = open, '0' = closed.
 router.get('/store-status', express.json(), async (req, res) => {
   try {
-    console.log('[petpooja-debug] headers:', JSON.stringify(req.headers)); // TODO: remove after confirming PetPooja auth headers
+    if (!verifyPetpoojaAuth(req, res)) return;
     const restID = req.body?.restID || req.query?.restID;
     // Minimum guard: reject a spoofed/random outlet id before any
     // processing. _resolveStore validates restID against the real
@@ -224,7 +262,7 @@ router.get('/store-status', express.json(), async (req, res) => {
 // reads to decide if a branch can take orders.
 router.post('/store-status', express.json(), async (req, res) => {
   try {
-    console.log('[petpooja-debug] headers:', JSON.stringify(req.headers)); // TODO: remove after confirming PetPooja auth headers
+    if (!verifyPetpoojaAuth(req, res)) return;
     const { restID, store_status, reason, turn_on_time } = req.body || {};
     // Minimum guard: reject a spoofed/random outlet id BEFORE the
     // branch mutation below. _resolveStore checks the real
