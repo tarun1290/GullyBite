@@ -16,8 +16,25 @@ router.use(requireAuth);
 
 const POS_503 = { error: 'POS integrations are currently disabled. Set ENABLE_POS_INTEGRATIONS=true to activate.', feature: 'pos_integrations', status: 'disabled' };
 
+// Restaurant-facing integration view. Credentials are intentionally
+// NOT included — only operational status the dashboard needs.
+function toIntegrationView(doc, branchName) {
+  return {
+    platform        : doc.platform,
+    branch_id       : doc.branch_id || null,
+    branch_name     : branchName || null,
+    outlet_id       : doc.outlet_id || null,
+    is_active       : !!doc.is_active,
+    sync_status     : doc.sync_status || 'idle',
+    last_synced_at  : doc.last_synced_at || null,
+    last_sync_result: doc.last_sync_result || null,
+    item_count      : doc.item_count || 0,
+    created_at      : doc.created_at || null,
+  };
+}
+
 // ─── GET /api/restaurant/integrations ─────────────────────────
-// List all integrations for this restaurant (credentials masked)
+// List all integrations for the authed restaurant's branches.
 router.get('/', async (req, res) => {
   try {
     const docs = await col('restaurant_integrations')
@@ -25,12 +42,15 @@ router.get('/', async (req, res) => {
       .sort({ platform: 1 })
       .toArray();
 
-    res.json(mapIds(docs).map(d => ({
-      ...d,
-      api_key      : d.api_key      ? '••••••••' : null,
-      api_secret   : d.api_secret   ? '••••••••' : null,
-      access_token : d.access_token ? '••••••••' : null,
-    })));
+    const branchIds = [...new Set(docs.map(d => d.branch_id).filter(Boolean))];
+    const branches = branchIds.length
+      ? await col('branches')
+          .find({ _id: { $in: branchIds }, restaurant_id: req.restaurantId })
+          .toArray()
+      : [];
+    const branchName = Object.fromEntries(branches.map(b => [String(b._id), b.name]));
+
+    res.json(docs.map(d => toIntegrationView(d, branchName[String(d.branch_id)])));
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -175,6 +195,168 @@ router.delete('/:platform', async (req, res) => {
       platform: req.params.platform,
     });
     res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ═══════════════════════════════════════════════════════════
+// PER-BRANCH ROUTES — restaurant-facing, branch-scoped.
+// Keyed by (restaurant_id, platform, branch_id) so a restaurant can
+// run the same POS independently across multiple branches. Defined
+// AFTER /:platform/variants so that literal route is not shadowed by
+// the /:platform/:branchId param route.
+// ═══════════════════════════════════════════════════════════
+
+// Resolve + authorize the branch against the authed restaurant.
+// Sends the error response and returns null when the caller must stop.
+async function _authBranch(req, res, branchId) {
+  if (!branchId) { res.status(400).json({ error: 'branchId is required' }); return null; }
+  const branch = await col('branches').findOne({ _id: branchId, restaurant_id: req.restaurantId });
+  if (!branch) { res.status(403).json({ error: 'Branch not found for this restaurant' }); return null; }
+  return branch;
+}
+
+// ─── GET /:platform/:branchId — integration for one branch ────
+router.get('/:platform/:branchId', async (req, res) => {
+  const { platform, branchId } = req.params;
+  try {
+    const branch = await _authBranch(req, res, branchId);
+    if (!branch) return;
+
+    const doc = await col('restaurant_integrations').findOne({
+      restaurant_id: req.restaurantId, platform, branch_id: branchId,
+    });
+    if (!doc) return res.status(404).json({ error: 'Integration not configured for this branch' });
+
+    res.json(toIntegrationView(doc, branch.name));
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ─── POST /:platform/:branchId — upsert credentials ───────────
+router.post('/:platform/:branchId', async (req, res) => {
+  if (!POS_INTEGRATIONS_ENABLED) return res.status(503).json(POS_503);
+  const { platform, branchId } = req.params;
+  if (!SERVICES[platform]) return res.status(400).json({ error: 'Unknown platform' });
+
+  try {
+    const branch = await _authBranch(req, res, branchId);
+    if (!branch) return;
+
+    const { app_key, app_secret, access_token, outlet_id } = req.body || {};
+    const now = new Date();
+    const existing = await col('restaurant_integrations').findOne({
+      restaurant_id: req.restaurantId, platform, branch_id: branchId,
+    });
+
+    if (existing) {
+      const $set = { updated_at: now };
+      if (app_key      != null) $set.app_key      = app_key;
+      if (app_secret   != null) $set.app_secret   = app_secret;
+      if (access_token != null) $set.access_token = access_token;
+      if (outlet_id    != null) $set.outlet_id    = outlet_id;
+      await col('restaurant_integrations').updateOne({ _id: existing._id }, { $set });
+      return res.json({ success: true, integration: toIntegrationView({ ...existing, ...$set }, branch.name) });
+    }
+
+    const doc = {
+      _id           : newId(),
+      restaurant_id : req.restaurantId,
+      platform,
+      branch_id     : branchId,
+      app_key       : app_key      || null,
+      app_secret    : app_secret   || null,
+      access_token  : access_token || null,
+      outlet_id     : outlet_id    || null,
+      // Restaurant explicitly entered credentials → activate on insert.
+      // The update path above intentionally omits is_active so a
+      // re-save preserves the existing value (no toggle-off).
+      is_active     : true,
+      sync_status   : 'idle',
+      sync_error    : null,
+      last_synced_at: null,
+      item_count    : 0,
+      last_sync_result : null,
+      created_at    : now,
+      updated_at    : now,
+    };
+    await col('restaurant_integrations').insertOne(doc);
+    res.json({ success: true, integration: toIntegrationView(doc, branch.name) });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ─── DELETE /:platform/:branchId — disconnect/disable ─────────
+// Soft disable (is_active:false) so the credential row survives for
+// re-activation and audit — mirrors the admin route's philosophy.
+router.delete('/:platform/:branchId', async (req, res) => {
+  if (!POS_INTEGRATIONS_ENABLED) return res.status(503).json(POS_503);
+  const { platform, branchId } = req.params;
+  try {
+    const branch = await _authBranch(req, res, branchId);
+    if (!branch) return;
+
+    const r = await col('restaurant_integrations').updateOne(
+      { restaurant_id: req.restaurantId, platform, branch_id: branchId },
+      { $set: { is_active: false, sync_status: 'idle', updated_at: new Date() } },
+    );
+    if (!r.matchedCount) return res.status(404).json({ error: 'Integration not configured for this branch' });
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ─── POST /:platform/:branchId/sync — manual menu sync ────────
+router.post('/:platform/:branchId/sync', async (req, res) => {
+  if (!POS_INTEGRATIONS_ENABLED) return res.status(503).json(POS_503);
+  const { platform, branchId } = req.params;
+  const syncMode = req.body?.syncMode || 'incremental';
+  if (!SERVICES[platform]) return res.status(400).json({ error: 'Unknown platform' });
+
+  try {
+    const branch = await _authBranch(req, res, branchId);
+    if (!branch) return;
+
+    const integration = await col('restaurant_integrations').findOne({
+      restaurant_id: req.restaurantId, platform, branch_id: branchId,
+    });
+    if (!integration) return res.status(404).json({ error: 'Integration not configured for this branch' });
+    if (!integration.is_active) return res.status(400).json({ error: 'Integration is disabled' });
+
+    const result = await triggerSync(platform, integration._id, req.restaurantId, syncMode);
+    res.json(result);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ─── PATCH /:platform/:branchId/toggle — flip is_active ───────
+// Branch-scoped equivalent of the legacy PATCH /:platform/toggle.
+// Accepts an explicit { isActive } in the body; when omitted, flips
+// the current value. Activating fires a fire-and-forget incremental
+// sync so the menu pulls in immediately (matches legacy behavior).
+router.patch('/:platform/:branchId/toggle', async (req, res) => {
+  if (!POS_INTEGRATIONS_ENABLED) return res.status(503).json(POS_503);
+  const { platform, branchId } = req.params;
+
+  try {
+    const branch = await _authBranch(req, res, branchId);
+    if (!branch) return;
+
+    const existing = await col('restaurant_integrations').findOne({
+      restaurant_id: req.restaurantId, platform, branch_id: branchId,
+    });
+    if (!existing) return res.status(404).json({ error: 'Integration not configured for this branch' });
+
+    const nextActive = typeof req.body?.isActive === 'boolean'
+      ? req.body.isActive
+      : !existing.is_active;
+
+    const integration = await col('restaurant_integrations').findOneAndUpdate(
+      { _id: existing._id },
+      { $set: { is_active: nextActive, updated_at: new Date() } },
+      { returnDocument: 'after' },
+    );
+
+    if (nextActive) {
+      triggerSync(platform, integration._id, req.restaurantId, 'incremental').catch(() => {});
+    }
+
+    res.json({ success: true, isActive: integration.is_active });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 

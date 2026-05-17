@@ -1326,3 +1326,73 @@ export async function updateCaptainListing(body: CaptainListingUpdate): Promise<
   const { data } = await client.patch<CaptainSuggestion>('/api/restaurant/captain/listing', body);
   return data;
 }
+
+// ── POS / delivery integrations (per-branch) ────────────────────────
+// Mirrors backend src/routes/integrations.js. The GET shape is the
+// restaurant-facing view — no credentials are ever returned.
+
+export interface Integration {
+  platform: string;
+  branch_id: string | null;
+  branch_name: string | null;
+  outlet_id: string | null;
+  is_active: boolean;
+  sync_status: string;
+  last_synced_at: string | null;
+  last_sync_result: unknown | null;
+  item_count: number;
+  created_at: string | null;
+}
+
+export interface IntegrationCredentials {
+  app_key?: string;
+  app_secret?: string;
+  access_token?: string;
+  outlet_id?: string;
+}
+
+export async function listIntegrations(): Promise<Integration[]> {
+  const { data } = await client.get<Integration[]>('/api/restaurant/integrations');
+  return data;
+}
+
+export async function getIntegration(platform: string, branchId: string): Promise<Integration> {
+  const { data } = await client.get<Integration>(
+    `/api/restaurant/integrations/${encodeURIComponent(platform)}/${encodeURIComponent(branchId)}`,
+  );
+  return data;
+}
+
+export async function upsertIntegration(
+  platform: string,
+  branchId: string,
+  creds: IntegrationCredentials,
+): Promise<{ success: boolean; integration: Integration }> {
+  const { data } = await client.post(
+    `/api/restaurant/integrations/${encodeURIComponent(platform)}/${encodeURIComponent(branchId)}`,
+    creds,
+  );
+  return data as { success: boolean; integration: Integration };
+}
+
+export async function deleteIntegration(
+  platform: string,
+  branchId: string,
+): Promise<{ success: boolean }> {
+  const { data } = await client.delete(
+    `/api/restaurant/integrations/${encodeURIComponent(platform)}/${encodeURIComponent(branchId)}`,
+  );
+  return data as { success: boolean };
+}
+
+export async function syncIntegration(
+  platform: string,
+  branchId: string,
+  syncMode?: string,
+): Promise<unknown> {
+  const { data } = await client.post(
+    `/api/restaurant/integrations/${encodeURIComponent(platform)}/${encodeURIComponent(branchId)}/sync`,
+    syncMode ? { syncMode } : {},
+  );
+  return data;
+}

@@ -1,6 +1,7 @@
 'use client';
 
-import { useState } from 'react';
+import { Suspense, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import BusinessInfoSection from '../../../components/restaurant/settings/BusinessInfoSection';
 import PricingSection from '../../../components/restaurant/settings/PricingSection';
 import NotificationSection from '../../../components/restaurant/settings/NotificationSection';
@@ -23,8 +24,20 @@ const SECTIONS: ReadonlyArray<readonly [string, string]> = [
   ['team', '👥 Team'],
 ];
 
-export default function SettingsPage() {
-  const [activeSection, setActiveSection] = useState<string>('business');
+// Valid tab keys derived from the chip nav above — single source of
+// truth, so adding a SECTIONS entry automatically makes ?section= for
+// it deep-linkable without touching this set.
+const VALID_SECTIONS = new Set<string>(SECTIONS.map(([v]) => v));
+
+function SettingsPageInner() {
+  const searchParams = useSearchParams();
+  // Initial tab only: read ?section= once on mount and validate against
+  // the known keys; anything missing or unknown falls back to 'business'.
+  // Chip clicks still drive activeSection normally afterwards.
+  const [activeSection, setActiveSection] = useState<string>(() => {
+    const requested = searchParams.get('section');
+    return requested && VALID_SECTIONS.has(requested) ? requested : 'business';
+  });
   const { restaurant } = useRestaurant();
   const { showToast } = useToast();
   const [storeIdCopied, setStoreIdCopied] = useState<boolean>(false);
@@ -110,5 +123,17 @@ export default function SettingsPage() {
         </div>
       )}
     </div>
+  );
+}
+
+// useSearchParams() requires a Suspense boundary on prerendered routes
+// (Next 16 — see node_modules/next/dist/docs/.../use-search-params.md).
+// This page is statically prerendered, so the hook-using component must
+// sit inside <Suspense>.
+export default function SettingsPage() {
+  return (
+    <Suspense fallback={null}>
+      <SettingsPageInner />
+    </Suspense>
   );
 }

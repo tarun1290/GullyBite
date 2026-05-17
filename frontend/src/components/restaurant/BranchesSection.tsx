@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
 import { useToast } from '../Toast';
 import Toggle from '../Toggle';
 import BranchFormModal from './BranchFormModal';
@@ -14,6 +15,8 @@ import {
   restoreBranch,
   permanentDeleteBranch,
   retryBranchBilling,
+  listIntegrations,
+  type Integration,
 } from '../../api/restaurant';
 import type { Branch, BranchHours, BranchHoursDay } from '../../types';
 
@@ -125,6 +128,9 @@ function toSnake(camel: string): string {
 export default function BranchesSection() {
   const { showToast } = useToast();
   const [branches, setBranches] = useState<BranchExt[]>([]);
+  // branch_id → integration summary. Populated once per branch load;
+  // a fetch failure degrades the badge to "No POS Connected".
+  const [integrationByBranch, setIntegrationByBranch] = useState<Map<string, Integration>>(new Map());
   const [loading, setLoading] = useState<boolean>(true);
   const [modalOpen, setModalOpen] = useState<boolean>(false);
   const [editingBranch, setEditingBranch] = useState<BranchExt | null>(null);
@@ -153,6 +159,21 @@ export default function BranchesSection() {
     try {
       const list = (await getBranches()) as BranchExt[] | null;
       setBranches(Array.isArray(list) ? list : []);
+
+      // Integration status badges. One extra request per load; failure
+      // is non-fatal — the badge just shows "No POS Connected".
+      try {
+        const integrations = await listIntegrations();
+        const m = new Map<string, Integration>();
+        for (const it of Array.isArray(integrations) ? integrations : []) {
+          if (!it.branch_id) continue;
+          const prev = m.get(it.branch_id);
+          if (!prev || (it.is_active && !prev.is_active)) m.set(it.branch_id, it);
+        }
+        setIntegrationByBranch(m);
+      } catch {
+        setIntegrationByBranch(new Map());
+      }
     } catch (err: unknown) {
       const e = err as { response?: { data?: { error?: string } }; message?: string };
       showToast(e?.response?.data?.error || e?.message || 'Failed to load branches', 'error');
@@ -470,6 +491,7 @@ export default function BranchesSection() {
           {sortedBranches.map((b) => {
             const isDeleted = !!b.deleted_at;
             const isExpanded = !isDeleted && expandedId === b.id;
+            const posConnected = !!integrationByBranch.get(b.id)?.is_active;
             return (
               <div
                 key={b.id}
@@ -486,8 +508,25 @@ export default function BranchesSection() {
                   onClick={isDeleted ? undefined : () => setExpandedId(isExpanded ? null : b.id)}
                 >
                   <div className="flex-1 min-w-0">
-                    <div className="bcard-name font-bold text-md">
-                      {b.name}
+                    <div className="bcard-name font-bold text-md flex items-center gap-2">
+                      <span>{b.name}</span>
+                      <Link
+                        href="/dashboard/settings?section=integrations"
+                        onClick={(e) => e.stopPropagation()}
+                        title={posConnected ? 'POS Connected' : 'No POS Connected'}
+                        aria-label={posConnected ? 'POS Connected' : 'No POS Connected'}
+                        className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium no-underline ${
+                          posConnected ? 'bg-green-500 text-white' : 'bg-gray-300 text-gray-600'
+                        }`}
+                      >
+                        <span
+                          aria-hidden="true"
+                          className={`inline-block w-2 h-2 rounded-full ${
+                            posConnected ? 'bg-white' : 'bg-gray-600'
+                          }`}
+                        />
+                        {posConnected ? 'POS Connected' : 'No POS'}
+                      </Link>
                     </div>
                     {/* Branch ID row — between name and address per spec.
                         Inline copy button briefly flips to "Copied!" via

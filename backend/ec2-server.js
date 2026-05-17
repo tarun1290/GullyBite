@@ -344,6 +344,10 @@ app.use('/api/restaurant/staff', jsonAndSanitize(), require('./src/routes/restau
 // so /api/restaurant/captain/* resolves here, not into the legacy
 // restaurant router.
 app.use('/api/restaurant/captain', jsonAndSanitize(), require('./src/routes/captainRestaurant'));
+// Restaurant-facing POS / delivery integration management (per-branch).
+// Mounted BEFORE the catch-all so /api/restaurant/integrations/* resolves
+// here. NOT under /petpooja (that router is admin + Petpooja callbacks).
+app.use('/api/restaurant/integrations', jsonAndSanitize(), require('./src/routes/integrations'));
 // Catch-all /api/restaurant router — must be LAST of the /api/restaurant/* group.
 app.use('/api/restaurant', jsonAndSanitize({ limit: '10mb' }), require('./src/routes/restaurant'));
 
