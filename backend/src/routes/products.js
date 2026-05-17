@@ -24,7 +24,7 @@ router.use(requireAuth);
 // POST /api/restaurant/branches still exists for back-compat and does
 // not require FSSAI (older onboarding flow). New clients should prefer
 // this endpoint.
-router.post('/branches', validateBranchPayload, async (req, res) => {
+router.post('/branches', validateBranchPayload, async (req, res, next) => {
   try {
     // Branch onboarding is admin-gated — createBranch no longer returns a
     // Razorpay order (branches start 'pending_approval' and an admin
@@ -35,14 +35,18 @@ router.post('/branches', validateBranchPayload, async (req, res) => {
     });
     res.status(201).json(branch);
   } catch (err) {
-    res.status(err.statusCode || 500).json({ error: err.message });
+    // Designed client errors from the service layer carry an explicit
+    // statusCode (400/404) and a curated, safe message — surface those.
+    // Anything else is an unexpected server fault → mask via global handler.
+    if (err.statusCode) return res.status(err.statusCode).json({ error: err.message });
+    return next(err);
   }
 });
 
 // ─── Products ───────────────────────────────────────────────────
 // POST /api/restaurant/products
 // Create a product WITHOUT requiring a branch. Defaults is_unassigned=true.
-router.post('/', async (req, res) => {
+router.post('/', async (req, res, next) => {
   try {
     const product = await productSvc.createProduct({
       ...req.body,
@@ -50,23 +54,24 @@ router.post('/', async (req, res) => {
     });
     res.status(201).json(product);
   } catch (err) {
-    res.status(err.statusCode || 500).json({ error: err.message });
+    if (err.statusCode) return res.status(err.statusCode).json({ error: err.message });
+    return next(err);
   }
 });
 
 // GET /api/restaurant/products/unassigned — dashboard-only list.
 // NOT exposed to customer APIs; this is explicitly for ops/admin.
-router.get('/unassigned', async (req, res) => {
+router.get('/unassigned', async (req, res, next) => {
   try {
     const products = await productSvc.listUnassignedProducts(req.restaurantId);
     res.json({ count: products.length, products });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    return next(err);
   }
 });
 
 // POST /api/restaurant/products/:id/assign-branch
-router.post('/:id/assign-branch', validateAssignBranchPayload, async (req, res) => {
+router.post('/:id/assign-branch', validateAssignBranchPayload, async (req, res, next) => {
   try {
     const updated = await productSvc.assignProductToBranch({
       product_id: req.params.id,
@@ -78,12 +83,13 @@ router.post('/:id/assign-branch', validateAssignBranchPayload, async (req, res) 
     });
     res.json(updated);
   } catch (err) {
-    res.status(err.statusCode || 500).json({ error: err.message });
+    if (err.statusCode) return res.status(err.statusCode).json({ error: err.message });
+    return next(err);
   }
 });
 
 // POST /api/restaurant/products/:id/unassign-branch
-router.post('/:id/unassign-branch', async (req, res) => {
+router.post('/:id/unassign-branch', async (req, res, next) => {
   try {
     if (!req.body.branch_id) return res.status(400).json({ error: 'branch_id is required' });
     const updated = await productSvc.unassignFromBranch({
@@ -93,7 +99,8 @@ router.post('/:id/unassign-branch', async (req, res) => {
     });
     res.json(updated);
   } catch (err) {
-    res.status(err.statusCode || 500).json({ error: err.message });
+    if (err.statusCode) return res.status(err.statusCode).json({ error: err.message });
+    return next(err);
   }
 });
 
@@ -105,7 +112,7 @@ router.post('/:id/unassign-branch', async (req, res) => {
 // Query params:
 //   scope=unassigned (default) | all
 //   product_ids=id1,id2,...   (overrides scope)
-router.get('/branch-suggestions', async (req, res) => {
+router.get('/branch-suggestions', async (req, res, next) => {
   try {
     const productIds = req.query.product_ids
       ? String(req.query.product_ids).split(',').map(s => s.trim()).filter(Boolean)
@@ -116,18 +123,18 @@ router.get('/branch-suggestions', async (req, res) => {
     });
     res.json({ count: suggestions.length, suggestions });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    return next(err);
   }
 });
 
 // GET /api/restaurant/products/branch/:branchId — customer-facing view
 // (only active branches, only assigned products, merged overrides).
-router.get('/branch/:branchId', async (req, res) => {
+router.get('/branch/:branchId', async (req, res, next) => {
   try {
     const items = await productSvc.listCustomerMenuForBranch(req.params.branchId);
     res.json({ count: items.length, items });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    return next(err);
   }
 });
 

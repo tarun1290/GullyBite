@@ -140,8 +140,31 @@ async function _handleStatusCallback(body) {
     if (orderBlock.id != null)            $set.prorouting_order_id      = String(orderBlock.id);
     if (orderBlock.state)                 $set.prorouting_state          = String(orderBlock.state);
     if (orderBlock.lsp)                   $set.lsp                       = orderBlock.lsp;
-    if (orderBlock.price != null)         $set.prorouting_actual_price   = Number(orderBlock.price) || 0;
-    if (orderBlock.distance != null)      $set.prorouting_distance       = Number(orderBlock.distance) || 0;
+    // price is in paise. Attacker-controlled — Number(x) || 0 alone would
+    // happily persist a negative or absurdly large value (NaN→0 masks it).
+    // Bound to [0, 1_000_000] paise (= ₹10,000, a sane delivery-fee
+    // ceiling). On a bad value: skip the field (don't $set it) so we never
+    // overwrite a previously-good value with garbage — same skip-on-bad
+    // intent as the surrounding `!= null` guards. State handling still runs.
+    if (orderBlock.price != null) {
+      const priceNum = Number(orderBlock.price);
+      if (Number.isFinite(priceNum) && priceNum >= 0 && priceNum <= 1_000_000) {
+        $set.prorouting_actual_price = priceNum;
+      } else {
+        log.warn({ rawPrice: orderBlock.price, field: 'price', clientOrderId }, 'prorouting status callback: price out of bounds / non-finite, skipping field');
+      }
+    }
+    // distance in km. Bound to [0, 500] — no legitimate last-mile 3PL
+    // delivery exceeds 500km; anything else is corrupt/hostile. Skip-field
+    // on failure (same rationale as price above).
+    if (orderBlock.distance != null) {
+      const distNum = Number(orderBlock.distance);
+      if (Number.isFinite(distNum) && distNum >= 0 && distNum <= 500) {
+        $set.prorouting_distance = distNum;
+      } else {
+        log.warn({ rawDistance: orderBlock.distance, field: 'distance', clientOrderId }, 'prorouting status callback: distance out of bounds / non-finite, skipping field');
+      }
+    }
     if (orderBlock.rider)                 $set.rider                     = orderBlock.rider;
     if (orderBlock.tracking_url)          $set.prorouting_tracking_url   = String(orderBlock.tracking_url);
     if (orderBlock.pickup_proof)          $set.prorouting_pickup_proof   = orderBlock.pickup_proof;
@@ -273,6 +296,16 @@ router.post('/track', express.json({ limit: '256kb' }), async (req, res) => {
       // sometimes sends as a placeholder before the rider's GPS locks.
       if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue;
       if (lat === 0 && lng === 0) continue;
+      // Geographic range guard: a finite-but-out-of-range coord (e.g.
+      // attacker-supplied lat:999 / lng:-9999) would otherwise be written
+      // to Redis and fanned out via SSE + socket to dashboards. Bound to
+      // valid WGS84: lat ∈ [-90,90], lng ∈ [-180,180]. Skip this entry
+      // (continue) on failure — same convention as the finite/(0,0)
+      // guards above; the rest of the batch is still processed.
+      if (lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+        log.warn({ rawLat: o?.rider?.last_location?.lat, rawLng: o?.rider?.last_location?.lng, field: 'rider.last_location', cid }, 'prorouting track: lat/lng out of geographic range, skipping entry');
+        continue;
+      }
 
       const updatedAt = o?.rider?.last_location?.updated_at || new Date().toISOString();
       const trackingUrl = o?.url ? String(o.url) : undefined;

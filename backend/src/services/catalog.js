@@ -577,7 +577,12 @@ function _buildItemRequest(item, restaurant, branch) {
       { retailer_id: item.retailer_id },
       { $set: { catalog_sync_error: validation.errors[0], catalog_sync_failed_at: new Date() } }
     ).catch(() => {});
-    // Still attempt to sync — Meta may accept with auto-fixes from mapMenuItemToMetaProduct
+    // Skip this item — do NOT push it into the Meta batch. Meta rejects
+    // invalid items (e.g. "0.00 INR" for zero/null/negative price_paise),
+    // which can fail the whole batch. Mirrors the missing-retailer_id
+    // early-return above; all callers filter out this null via .filter(Boolean)
+    // or an explicit `if (!request)` guard before sending to Meta.
+    return null;
   }
 
   const retailerId = item.retailer_id;

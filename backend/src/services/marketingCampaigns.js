@@ -382,6 +382,16 @@ async function sendCampaign(campaignId) {
     let sentCount = 0;
     let failedCount = 0;
     let actualCostRs = 0;
+    // Set when a per-message wallet.debit() returns the insufficient-
+    // balance signal mid-run. The pre-flight check above is only a
+    // fast fail-fast on a single stale balance read; two concurrent
+    // campaigns for the same restaurant can both pass it and then
+    // overdraw the wallet collectively. The authoritative guard is
+    // per-send: we trust debit()'s own insufficient-balance result
+    // (the wallet service owns the balance check / atomicity) and
+    // abort the rest of THIS campaign on the first such signal rather
+    // than silently continuing to fire un-billed messages.
+    let haltedInsufficientBalance = false;
 
     // Pre-load the marketing block-list for this restaurant. One query
     // up front beats per-recipient findOne by orders of magnitude on
@@ -518,6 +528,28 @@ async function sendCampaign(campaignId) {
             log.error({ err, campaignId, restaurantId }, 'wallet debit failed for campaign message');
             return { charged: false, reason: 'debit_error' };
           });
+          // Campaign-level overspend guard. wallet.debit() returns
+          // { charged:false, reason:'insufficient_balance', balance }
+          // (its existing external contract — see services/wallet.js
+          // debit()) the moment the wallet can't cover this message.
+          // The stale pre-flight check above cannot catch a wallet
+          // drained by a *concurrent* campaign for the same restaurant,
+          // so this per-send signal is the real protection: stop the
+          // rest of the run immediately instead of continuing to send
+          // un-billed messages and driving the balance further negative.
+          if (debit?.reason === 'insufficient_balance') {
+            haltedInsufficientBalance = true;
+            log.warn(
+              {
+                campaignId,
+                restaurantId,
+                messagesSent: sentCount,
+                walletBalanceRs: debit?.balance,
+              },
+              'campaign halted mid-run: insufficient wallet balance',
+            );
+            break; // exit the inner batch loop; outer loop breaks below
+          }
           if (debit?.charged) {
             // actual_cost_rs reflects what the restaurant was charged,
             // not what Meta charged us — the audit trail the dashboard's
@@ -570,7 +602,35 @@ async function sendCampaign(campaignId) {
           }, 'campaign message send failed');
         }
       }
+      // A per-message debit signalled insufficient balance inside the
+      // batch above and broke the inner loop. Don't start the next
+      // batch (and skip the inter-batch sleep) — bail the outer loop
+      // so we stop the campaign mid-run rather than continuing to
+      // dispatch un-billable messages.
+      if (haltedInsufficientBalance) break;
       if (i + BATCH_SIZE < recipients.length) await sleep(BATCH_DELAY_MS);
+    }
+
+    // Halted mid-run on an insufficient-balance debit signal. Reuse
+    // the exact campaign-termination representation this file already
+    // uses for an insufficient-balance failure (see the pre-flight
+    // check above): finalize → status 'failed' with an error_message,
+    // and the same { ok:false, reason:'insufficient_balance', ... }
+    // return shape callers/tests already expect from the pre-flight
+    // path. counts of what *did* go out are included for observability.
+    if (haltedInsufficientBalance) {
+      await finalize(campaignId, 'failed', {
+        completed_at: new Date(),
+        error_message: 'Insufficient wallet balance (campaign halted mid-run)',
+      });
+      return {
+        ok: false,
+        reason: 'insufficient_balance',
+        halted_mid_run: true,
+        sent: sentCount,
+        failed: failedCount,
+        recipients: recipients.length,
+      };
     }
 
     await finalize(campaignId, 'sent', {

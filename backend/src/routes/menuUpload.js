@@ -52,7 +52,7 @@ const upload = multer({
 });
 
 // ── POST /upload ────────────────────────────────────────────
-router.post('/upload', requireAuth, upload.single('file'), async (req, res) => {
+router.post('/upload', requireAuth, upload.single('file'), async (req, res, next) => {
   try {
     if (!req.file) return res.status(400).json({ error: 'No file uploaded (field name: file)' });
     const restaurantId = req.restaurantId;
@@ -107,12 +107,12 @@ router.post('/upload', requireAuth, upload.single('file'), async (req, res) => {
       return res.status(400).json({ error: e.message });
     }
     log.error({ err: e }, 'menu upload failed');
-    res.status(500).json({ error: e.message });
+    return next(e);
   }
 });
 
 // ── GET /uploads ────────────────────────────────────────────
-router.get('/uploads', requireAuth, async (req, res) => {
+router.get('/uploads', requireAuth, async (req, res, next) => {
   try {
     const restaurantId = req.restaurantId;
     const items = await col('menu_uploads').find({ restaurant_id: restaurantId })
@@ -122,7 +122,7 @@ router.get('/uploads', requireAuth, async (req, res) => {
       sheet_name: d.sheet_name, row_count: d.row_count,
       status: d.status, created_at: d.created_at,
     })));
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { return next(e); }
 });
 
 // ── POST /mapping ───────────────────────────────────────────
@@ -130,7 +130,7 @@ router.get('/uploads', requireAuth, async (req, res) => {
 // If column_mapping is omitted, autoMapColumns runs against the
 // first 5 raw rows. The chosen mapping is persisted on the upload
 // so /import can replay it without re-detecting.
-router.post('/mapping', express.json({ limit: '2mb' }), requireAuth, async (req, res) => {
+router.post('/mapping', express.json({ limit: '2mb' }), requireAuth, async (req, res, next) => {
   try {
     const restaurantId = req.restaurantId;
     const { upload_id, column_mapping } = req.body || {};
@@ -161,7 +161,7 @@ router.post('/mapping', express.json({ limit: '2mb' }), requireAuth, async (req,
     });
   } catch (e) {
     log.error({ err: e }, 'menu mapping failed');
-    res.status(500).json({ error: e.message });
+    return next(e);
   }
 });
 
@@ -170,7 +170,7 @@ router.post('/mapping', express.json({ limit: '2mb' }), requireAuth, async (req,
 // One-shot: transform → normalize → insert. Operates whether or not
 // /mapping was called first; if column_mapping is missing on the
 // upload doc and not in the body, autoMapColumns kicks in.
-router.post('/import', express.json({ limit: '2mb' }), requireAuth, async (req, res) => {
+router.post('/import', express.json({ limit: '2mb' }), requireAuth, async (req, res, next) => {
   try {
     const restaurantId = req.restaurantId;
     const { upload_id, column_mapping } = req.body || {};
@@ -232,7 +232,7 @@ router.post('/import', express.json({ limit: '2mb' }), requireAuth, async (req, 
     });
   } catch (e) {
     log.error({ err: e }, 'menu import failed');
-    res.status(500).json({ error: e.message });
+    return next(e);
   }
 });
 

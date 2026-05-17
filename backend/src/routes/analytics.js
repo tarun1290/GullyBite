@@ -62,7 +62,7 @@ function dateGroupExpr(granularity) {
 }
 
 // ─── OVERVIEW KPIs ──────────────────────────────────────────
-router.get('/overview', async (req, res) => {
+router.get('/overview', async (req, res, next) => {
   try {
     const match = buildMatchFilter(req.query);
     const cityArea = cityAreaPipeline(req.query);
@@ -153,11 +153,11 @@ router.get('/overview', async (req, res) => {
         gmv: pctChange(t.gmv, prev.gmv),
       },
     });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { return next(e); }
 });
 
 // ─── ORDER TIMESERIES ───────────────────────────────────────
-router.get('/orders/timeseries', async (req, res) => {
+router.get('/orders/timeseries', async (req, res, next) => {
   try {
     const match = buildMatchFilter(req.query);
     const granularity = req.query.granularity || 'daily';
@@ -173,11 +173,11 @@ router.get('/orders/timeseries', async (req, res) => {
       { $project: { _id: 0, date: '$_id', order_count: 1, gmv: { $round: ['$gmv', 2] }, avg_order_value: { $round: [{ $cond: [{ $gt: ['$order_count', 0] }, { $divide: ['$gmv', '$order_count'] }, 0] }, 2] } } },
     ]).toArray();
     res.json(data);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { return next(e); }
 });
 
 // ─── ORDERS BY STATUS ───────────────────────────────────────
-router.get('/orders/by-status', async (req, res) => {
+router.get('/orders/by-status', async (req, res, next) => {
   try {
     const match = buildMatchFilter(req.query);
     const data = await col('orders').aggregate([
@@ -187,11 +187,11 @@ router.get('/orders/by-status', async (req, res) => {
       { $sort: { count: -1 } },
     ]).toArray();
     res.json(data.map(d => ({ status: d._id, count: d.count })));
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { return next(e); }
 });
 
 // ─── ORDERS BY HOUR ─────────────────────────────────────────
-router.get('/orders/by-hour', async (req, res) => {
+router.get('/orders/by-hour', async (req, res, next) => {
   try {
     const match = buildMatchFilter(req.query);
     const data = await col('orders').aggregate([
@@ -201,11 +201,11 @@ router.get('/orders/by-hour', async (req, res) => {
       { $sort: { _id: 1 } },
     ]).toArray();
     res.json(data.map(d => ({ hour: d._id, count: d.count })));
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { return next(e); }
 });
 
 // ─── ORDERS BY DAY OF WEEK ─────────────────────────────────
-router.get('/orders/by-day', async (req, res) => {
+router.get('/orders/by-day', async (req, res, next) => {
   try {
     const match = buildMatchFilter(req.query);
     const data = await col('orders').aggregate([
@@ -216,11 +216,11 @@ router.get('/orders/by-day', async (req, res) => {
     ]).toArray();
     const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
     res.json(data.map(d => ({ day: days[d._id - 1], count: d.count })));
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { return next(e); }
 });
 
 // ─── GEOGRAPHIC: CITIES ─────────────────────────────────────
-router.get('/geographic/cities', async (req, res) => {
+router.get('/geographic/cities', async (req, res, next) => {
   try {
     const match = buildMatchFilter(req.query);
     const data = await col('orders').aggregate([
@@ -238,11 +238,11 @@ router.get('/geographic/cities', async (req, res) => {
       { $sort: { gmv: -1 } },
     ]).toArray();
     res.json(data);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { return next(e); }
 });
 
 // ─── GEOGRAPHIC: AREAS (requires city filter) ───────────────
-router.get('/geographic/areas', async (req, res) => {
+router.get('/geographic/areas', async (req, res, next) => {
   try {
     if (!req.query.city) return res.status(400).json({ error: 'city filter required' });
     const match = buildMatchFilter(req.query);
@@ -263,11 +263,11 @@ router.get('/geographic/areas', async (req, res) => {
       { $sort: { gmv: -1 } },
     ]).toArray();
     res.json(data);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { return next(e); }
 });
 
 // ─── RESTAURANT RANKING ─────────────────────────────────────
-router.get('/restaurants/ranking', async (req, res) => {
+router.get('/restaurants/ranking', async (req, res, next) => {
   try {
     const match = buildMatchFilter(req.query);
     const page = parseInt(req.query.page) || 1;
@@ -300,11 +300,11 @@ router.get('/restaurants/ranking', async (req, res) => {
       { $limit: limit },
     ]).toArray();
     res.json(data);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { return next(e); }
 });
 
 // ─── RESTAURANT DETAIL ──────────────────────────────────────
-router.get('/restaurants/:id/detail', async (req, res) => {
+router.get('/restaurants/:id/detail', async (req, res, next) => {
   try {
     const rid = req.params.id;
     const match = { ...buildMatchFilter(req.query), restaurant_id: rid };
@@ -342,11 +342,11 @@ router.get('/restaurants/:id/detail', async (req, res) => {
       customer_growth: customerGrowth.map(c => ({ date: c._id, new_customers: c.count })),
       status_distribution: statusDist.map(s => ({ status: s._id, count: s.count })),
     });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { return next(e); }
 });
 
 // ─── CUSTOMER OVERVIEW ──────────────────────────────────────
-router.get('/customers/overview', async (req, res) => {
+router.get('/customers/overview', async (req, res, next) => {
   try {
     const match = buildMatchFilter(req.query);
 
@@ -386,11 +386,11 @@ router.get('/customers/overview', async (req, res) => {
       top_by_spend: topBySpendMasked,
       order_distribution: distribution.map(d => ({ bucket: bucketLabels[d._id] || `${d._id}+`, count: d.count })),
     });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { return next(e); }
 });
 
 // ─── CUSTOMER SEGMENTS ──────────────────────────────────────
-router.get('/customers/segments', async (req, res) => {
+router.get('/customers/segments', async (req, res, next) => {
   try {
     const now = new Date();
     const d30 = new Date(now - 30 * 86400000);
@@ -417,11 +417,11 @@ router.get('/customers/segments', async (req, res) => {
       return { segment: s, count: d.count, gmv: parseFloat((d.gmv || 0).toFixed(2)), avg_orders: parseFloat((d.avg_orders || 0).toFixed(1)) };
     });
     res.json(sorted);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { return next(e); }
 });
 
 // ─── DELIVERY PERFORMANCE ───────────────────────────────────
-router.get('/delivery/performance', async (req, res) => {
+router.get('/delivery/performance', async (req, res, next) => {
   try {
     const match = { ...buildMatchFilter(req.query), status: 'DELIVERED', delivered_at: { $exists: true } };
     const data = await col('orders').aggregate([
@@ -443,26 +443,26 @@ router.get('/delivery/performance', async (req, res) => {
       total_delivered: avg.total,
       histogram: (data[0]?.histogram || []).map(h => ({ bucket: bucketLabels[h._id] || `${h._id}`, count: h.count })),
     });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { return next(e); }
 });
 
 // ─── DISTINCT CITIES (for filter dropdown) ──────────────────
-router.get('/filters/cities', async (req, res) => {
+router.get('/filters/cities', async (req, res, next) => {
   try {
     const cities = await col('branches').distinct('city', { city: { $ne: null, $ne: '' } });
     res.json(cities.filter(Boolean).sort());
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { return next(e); }
 });
 
 // ─── DISTINCT AREAS (for filter dropdown, requires city) ────
-router.get('/filters/areas', async (req, res) => {
+router.get('/filters/areas', async (req, res, next) => {
   try {
     const filter = {};
     // Sanitize city input to prevent regex injection
     if (req.query.city) filter.city = { $regex: new RegExp(req.query.city.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i') };
     const areas = await col('branches').distinct('area', filter);
     res.json(areas.filter(Boolean).sort());
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { return next(e); }
 });
 
 module.exports = router;

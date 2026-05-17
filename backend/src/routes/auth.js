@@ -288,7 +288,7 @@ const signupLimiter = rateLimitFn(
   { message: 'Too many signup attempts, try again later' }
 );
 
-router.post('/signup', express.json(), signupLimiter, async (req, res) => {
+router.post('/signup', express.json(), signupLimiter, async (req, res, next) => {
   try {
     const { ownerName, email, password } = req.body;
     if (!ownerName || !email || !password)
@@ -364,7 +364,7 @@ router.post('/signup', express.json(), signupLimiter, async (req, res) => {
       .catch((err) => req.log.warn({ err: err && err.message }, 'welcome email send failed'));
   } catch (err) {
     req.log.error({ err }, 'Signup failed');
-    res.status(500).json({ error: err.message });
+    return next(err);
   }
 });
 
@@ -1160,7 +1160,7 @@ router.get('/platform-token-health', requireAuth, async (req, res) => {
 // Embedded Signup (config_id) codes: exchange WITHOUT redirect_uri per Meta docs.
 // Server-side redirect codes: exchange WITH META_OAUTH_REDIRECT_URI.
 
-router.post('/connect-meta', requireAuth, express.json(), async (req, res) => {
+router.post('/connect-meta', requireAuth, express.json(), async (req, res, next) => {
   try {
     const { accessToken, code, sessionInfo, fromJsSdk } = req.body;
     req.log.info({ codePresent: !!code, accessTokenPresent: !!accessToken, fromJsSdk: !!fromJsSdk, sessionInfo: sessionInfo || {} }, 'Route hit');
@@ -1336,7 +1336,7 @@ router.post('/connect-meta', requireAuth, express.json(), async (req, res) => {
     res.json({ connected: true });
   } catch (err) {
     req.log.error({ err, responseData: err.response?.data }, 'Connect-meta failed');
-    res.status(500).json({ error: 'Failed to connect WhatsApp: ' + (err.response?.data?.error?.message || err.message) });
+    return next(err);
   }
 });
 

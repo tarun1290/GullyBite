@@ -164,7 +164,7 @@ router.delete('/branches/:branchId/integration', requireAdmin, async (req, res) 
 // Admin-triggered full menu re-pull from Petpooja for a branch. Resolves
 // the active integration row, then hands off to the shared posSync
 // service in 'full_replace' mode.
-router.post('/branches/:branchId/sync', requireAdmin, async (req, res) => {
+router.post('/branches/:branchId/sync', requireAdmin, async (req, res, next) => {
   try {
     const { branchId } = req.params;
 
@@ -189,7 +189,7 @@ router.post('/branches/:branchId/sync', requireAdmin, async (req, res) => {
     return res.json({ success: true, result });
   } catch (err) {
     log.error({ err: err?.message, branchId: req.params.branchId }, 'POST sync failed');
-    return res.status(500).json({ error: err.message });
+    return next(err);
   }
 });
 

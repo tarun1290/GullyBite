@@ -11,7 +11,7 @@ const log = require('../utils/logger').child({ component: 'upload' });
 router.use(requireAuth);
 
 // POST /api/upload/presign — generate a presigned S3 PUT URL
-router.post('/presign', async (req, res) => {
+router.post('/presign', async (req, res, next) => {
   try {
     if (!IMAGE_PIPELINE_ENABLED) {
       return res.status(503).json({ error: 'Image uploads are not configured. Set AWS environment variables to enable.' });
@@ -43,7 +43,7 @@ router.post('/presign', async (req, res) => {
     });
   } catch (e) {
     req.log.error({ err: e }, 'Presign error');
-    res.status(500).json({ error: e.message });
+    return next(e);
   }
 });
 

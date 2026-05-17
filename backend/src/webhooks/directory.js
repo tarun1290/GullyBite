@@ -69,7 +69,7 @@ router.get('/', (req, res) => {
 });
 
 // ─── INCOMING MESSAGES ──────────────────────────────────────────
-router.post('/', express.raw({ type: '*/*' }), async (req, res) => {
+router.post('/', express.raw({ type: '*/*', limit: '1mb' }), async (req, res) => {
   res.sendStatus(200);
 
   try {

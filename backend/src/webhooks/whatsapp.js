@@ -303,7 +303,7 @@ router.get('/', (req, res) => {
 });
 
 // ─── POST: INCOMING EVENTS ────────────────────────────────────
-router.post('/', express.raw({ type: '*/*' }), async (req, res) => {
+router.post('/', express.raw({ type: '*/*', limit: '2mb' }), async (req, res) => {
   // Must ALWAYS return 200 to Meta — even for rate-limited / blocked messages
   res.sendStatus(200);
 
@@ -3830,7 +3830,17 @@ const handleNfmReply = async (nfmReply, customer, conv, waAccount) => {
     responseData = typeof nfmReply.response_json === 'string'
       ? JSON.parse(nfmReply.response_json)
       : nfmReply.response_json || {};
-  } catch { responseData = {}; }
+  } catch (err) {
+    // Malformed JSON from Meta — previously swallowed silently then fell
+    // through to the legacy structured-address branch, building a junk
+    // "Address provided via form" record and losing the real submission.
+    // Now: log it, tell the customer, and STOP (no fall-through).
+    log.error({ err, wa_phone: customer.wa_phone || customer.bsuid, response_json: nfmReply.response_json }, 'nfm_reply.response_json parse failed — aborting submission');
+    await wa.sendText(pid, token, to,
+      'Sorry, something went wrong with your submission. Please try again in a moment.'
+    ).catch(() => {});
+    return;
+  }
 
   // ── Delivery Address Flow response (action-based — check BEFORE flow_token) ──
   // Accept both 'add_address' (current Flow JSON) and 'new_address' (legacy
@@ -3931,6 +3941,10 @@ const handleDeliveryFlowResponse = async (responseData, customer, conv, waAccoun
   const to = customerIdentity.resolveRecipient(customer);
   const restaurantId = waAccount.restaurant_id;
 
+  // Additive error boundary ONLY — wraps the entire existing body unchanged.
+  // Previously any throw in saveAddress / serviceability / branch-lookup lost
+  // the customer's address submission silently with no retry prompt.
+  try {
   log.info({ responseData }, 'Flow delivery response');
 
   // ── SAVED ADDRESS SELECTED ──
@@ -4148,6 +4162,16 @@ const handleDeliveryFlowResponse = async (responseData, customer, conv, waAccoun
         await wa.sendText(pid, token, to, '😔 No outlets are currently open. Please try again later.');
       }
     }
+    return;
+  }
+  } catch (err) {
+    // Address submission failed mid-flow — surface it instead of dead-ending.
+    // Match the file's webhook catch pattern: log.error + customer reply,
+    // return safely without rethrowing so the webhook does not crash.
+    log.error({ err, wa_phone: customer.wa_phone || customer.bsuid, responseData }, 'handleDeliveryFlowResponse threw — address submission failed');
+    await wa.sendText(pid, token, to,
+      'Sorry, we couldn\'t save your address. Please try again in a moment.'
+    ).catch(() => {});
     return;
   }
 };

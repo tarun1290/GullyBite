@@ -115,24 +115,63 @@ async function credit(restaurantId, amountRs, description, referenceId = null) {
 // ─── DEBIT (MESSAGING CHARGE) ────────────────────────────────
 // Returns { charged, wallet } — charged is false only for marketing blocks
 async function debit(restaurantId, amountRs, description, referenceId = null, { isOrderLifecycle = false } = {}) {
-  const wallet = await col('waba_wallets').findOne({ restaurant_id: restaurantId });
+  // ── Atomic conditional debit ─────────────────────────────────
+  // Previously this was findOne → JS-side balance check → separate
+  // $inc. Two concurrent debits could both pass the stale-read
+  // check and both $inc, overdrawing the wallet negative. Now the
+  // balance guard lives inside the same atomic findOneAndUpdate so
+  // the read-decrement is a single serialized op (mongodb v6 driver
+  // returns the updated doc directly — null if the filter missed —
+  // with NO `.value` wrapper).
+  //
+  // Order-lifecycle carve-out (UNCHANGED behavior): order lifecycle
+  // messages are NEVER blocked by balance and are intentionally
+  // allowed to drive the wallet negative (recovered later via
+  // settleNegativeBalance). For that path we keep an UNCONDITIONAL
+  // $inc — no `$gte` floor — so it still succeeds into negative.
+  // Only the blockable (non-order-lifecycle) path gets the
+  // `balance_rs >= amountRs` filter.
+  const now = new Date();
+  let result;
 
-  // For non-order messages, block if insufficient balance
-  if (!isOrderLifecycle && wallet && wallet.balance_rs < amountRs) {
-    return { charged: false, reason: 'insufficient_balance', balance: wallet?.balance_rs || 0 };
+  if (isOrderLifecycle) {
+    // Allowed to go negative — unconditional atomic $inc (no floor).
+    result = await col('waba_wallets').findOneAndUpdate(
+      { restaurant_id: restaurantId },
+      {
+        $inc: { balance_rs: -amountRs, total_consumed_rs: amountRs },
+        $set: { updated_at: now },
+      },
+      { returnDocument: 'after' }
+    );
+
+    // null only when the wallet document does not exist.
+    if (!result) return { charged: false, reason: 'no_wallet' };
+  } else {
+    // Blockable path — only debit if balance can cover it. The
+    // `$gte: amountRs` filter makes the insufficient-balance check
+    // atomic with the decrement.
+    result = await col('waba_wallets').findOneAndUpdate(
+      { restaurant_id: restaurantId, balance_rs: { $gte: amountRs } },
+      {
+        $inc: { balance_rs: -amountRs, total_consumed_rs: amountRs },
+        $set: { updated_at: now },
+      },
+      { returnDocument: 'after' }
+    );
+
+    if (!result) {
+      // Filter missed: either wallet missing OR balance < amountRs.
+      // Preserve the EXACT pre-existing external contract — callers
+      // (e.g. marketingCampaigns.js) branch on `debit?.charged` and
+      // surface `reason: 'insufficient_balance'` + the balance. We
+      // re-read to report the current balance, matching the old
+      // `balance: wallet?.balance_rs || 0` shape (0 if no wallet).
+      const wallet = await col('waba_wallets').findOne({ restaurant_id: restaurantId });
+      if (!wallet) return { charged: false, reason: 'no_wallet' };
+      return { charged: false, reason: 'insufficient_balance', balance: wallet?.balance_rs || 0 };
+    }
   }
-
-  // Charge — even if it goes negative for order lifecycle
-  const result = await col('waba_wallets').findOneAndUpdate(
-    { restaurant_id: restaurantId },
-    {
-      $inc: { balance_rs: -amountRs, total_consumed_rs: amountRs },
-      $set: { updated_at: new Date() },
-    },
-    { returnDocument: 'after' }
-  );
-
-  if (!result) return { charged: false, reason: 'no_wallet' };
 
   await col('wallet_transactions').insertOne({
     _id: newId(),
@@ -165,27 +204,67 @@ async function settleNegativeBalance(restaurantId) {
   const wallet = await col('waba_wallets').findOne({ restaurant_id: restaurantId });
   if (!wallet || wallet.balance_rs >= 0) return { deducted: 0 };
 
-  const negativeAmount = Math.abs(wallet.balance_rs);
-  const gst = parseFloat((negativeAmount * GST_RATE).toFixed(2));
+  const observedNeg = wallet.balance_rs;          // negative, e.g. -42.50
+  const negativeAmount = Math.abs(observedNeg);   // 42.50
 
-  // Reset balance to zero
-  await col('waba_wallets').updateOne(
-    { restaurant_id: restaurantId },
-    { $set: { balance_rs: 0, updated_at: new Date() } }
+  // ── Atomic conditional recovery (no clobber of concurrent credit) ──
+  // Previously: findOne → updateOne({ $set: { balance_rs: 0 } }).
+  // A top-up landing between the findOne and the absolute $set was
+  // overwritten to 0 → the restaurant silently lost the top-up.
+  //
+  // Approach chosen: conditional `$inc` of +|observedNeg| guarded by
+  // `balance_rs: { $lt: 0 }`, NOT an aggregation-pipeline
+  // `$set: { balance_rs: 0 }`. Rationale: `$inc` composes additively
+  // and therefore can NEVER clobber a concurrent credit:
+  //   • If a credit lands AFTER our $inc → its own atomic $inc adds
+  //     on top; net balance = credit amount. Correct.
+  //   • If a credit lands BEFORE our $inc and the balance is now
+  //     >= 0 → the `$lt: 0` filter misses, we do nothing, and the
+  //     credit is fully preserved. We then re-derive the true
+  //     recovered amount from the post-update doc so the audit row
+  //     and return value never over-report.
+  //   • If a credit lands BEFORE our $inc but balance is still < 0
+  //     → filter matches; result = creditedBalance + |observedNeg|.
+  //     The credit is NOT lost (it is part of the new balance); we
+  //     report the amount actually moved by this op
+  //     (post − pre), not the stale |observedNeg|.
+  // An aggregation `$set: { balance_rs: 0 }` was rejected because in
+  // the "credit landed but balance still < 0" case it would discard
+  // that credit (overwrite to 0) — exactly the clobber we are fixing.
+  const now = new Date();
+  const updated = await col('waba_wallets').findOneAndUpdate(
+    { restaurant_id: restaurantId, balance_rs: { $lt: 0 } },
+    {
+      $inc: { balance_rs: negativeAmount },
+      $set: { updated_at: now },
+    },
+    { returnDocument: 'after' }
   );
+
+  // Filter missed → a concurrent credit already lifted balance to
+  // >= 0 between our read and write. Nothing recovered here; the
+  // credit is fully intact. Preserve the existing "nothing to do"
+  // return contract.
+  if (!updated) return { deducted: 0 };
+
+  // Report the amount THIS op actually moved (post − pre = the
+  // applied $inc) so a concurrent credit is neither clobbered nor
+  // double-counted. Equals negativeAmount in the no-race case.
+  const recovered = parseFloat((updated.balance_rs - observedNeg).toFixed(2));
+  const gst = parseFloat((recovered * GST_RATE).toFixed(2));
 
   await col('wallet_transactions').insertOne({
     _id: newId(),
     restaurant_id: restaurantId,
     type: 'settlement_deduction',
-    amount_rs: -negativeAmount,
-    balance_after_rs: 0,
-    description: `Settlement recovery of negative balance ₹${negativeAmount.toFixed(2)}`,
+    amount_rs: -recovered,
+    balance_after_rs: updated.balance_rs,
+    description: `Settlement recovery of negative balance ₹${recovered.toFixed(2)}`,
     reference_id: null,
     created_at: new Date(),
   });
 
-  return { deducted: negativeAmount, gst };
+  return { deducted: recovered, gst };
 }
 
 // ─── GET TRANSACTIONS ────────────────────────────────────────

@@ -50,7 +50,7 @@ router.get('/', (req, res) => {
 });
 
 // ─── INCOMING CHECKOUT EVENTS ───────────────────────────────────
-router.post('/', express.raw({ type: '*/*' }), async (req, res) => {
+router.post('/', express.raw({ type: '*/*', limit: '1mb' }), async (req, res) => {
   try {
     // ─── MANDATORY SIGNATURE VERIFICATION (fail-closed) ──────────
     // Both the x-hub-signature-256 header AND the webhook secret are

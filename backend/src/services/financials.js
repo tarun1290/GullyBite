@@ -20,27 +20,57 @@ const TDS_SECTION         = FINANCE_CONFIG.tdsSection;
 const round2 = n => Math.round((n || 0) * 100) / 100;
 
 // ─── FINANCIAL YEAR HELPERS ───────────────────────────────────────
+// Indian Financial Year: April 1 → March 31, anchored to IST (UTC+5:30),
+// NOT the server timezone and NOT a calendar (Jan–Dec) year.
+//
+// BUGFIX (IST-awareness): the previous implementation used
+// `new Date(year, 3, 1)` and `now.getMonth()`, both of which resolve in
+// the SERVER's local timezone. Prod runs in UTC (no TZ env var is set in
+// config/ or the server entry points), so on a UTC host the FY cutover
+// and boundary instants were computed in UTC, while settlement
+// `created_at` values are UTC instants representing IST wall-clock
+// events. A settlement at e.g. 2026-04-01T03:00 IST (= 2026-03-31T21:30
+// UTC) would then be mis-bucketed into the prior FY. We now compute the
+// boundaries the same way the rest of the codebase does (see
+// campaigns.js IST_OFFSET_MS / marketingCampaigns.js "Mar 1 00:00 IST =
+// Feb 28 18:30 UTC"): build the IST wall-clock midnight, then convert to
+// the equivalent UTC instant by subtracting the IST offset.
+const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
+
+// UTC instant for a given IST wall-clock moment.
+// istToUtc(2025, 3, 1, 0,0,0,0) === Apr 1 2025 00:00:00 IST === Mar 31 2025 18:30:00 UTC
+function istToUtc(y, m, d, hh = 0, mm = 0, ss = 0, ms = 0) {
+  return new Date(Date.UTC(y, m, d, hh, mm, ss, ms) - IST_OFFSET_MS);
+}
+
+// The IST-local "now" components (so month/year reflect the Indian
+// calendar even on a UTC server).
+function _istParts(now = new Date()) {
+  const ist = new Date(now.getTime() + IST_OFFSET_MS);
+  return { year: ist.getUTCFullYear(), month: ist.getUTCMonth() };
+}
+
 function getFYBounds(fyLabel) {
-  // fyLabel like "2025-26" → Apr 1 2025 to Mar 31 2026
+  // fyLabel like "2025-26" → Apr 1 2025 to Mar 31 2026 (IST)
   if (fyLabel) {
     const startYear = parseInt(fyLabel.split('-')[0]);
     return {
-      start: new Date(startYear, 3, 1),       // Apr 1
-      end:   new Date(startYear + 1, 2, 31, 23, 59, 59, 999), // Mar 31
+      start: istToUtc(startYear, 3, 1, 0, 0, 0, 0),                  // Apr 1 00:00:00.000 IST
+      end:   istToUtc(startYear + 1, 2, 31, 23, 59, 59, 999),        // Mar 31 23:59:59.999 IST
     };
   }
-  // Default: current FY
-  const now = new Date();
-  const year = now.getMonth() >= 3 ? now.getFullYear() : now.getFullYear() - 1;
+  // Default: current FY (cutover decided on the IST month, not server TZ).
+  const { year: iy, month: im } = _istParts();
+  const year = im >= 3 ? iy : iy - 1;
   return {
-    start: new Date(year, 3, 1),
-    end:   new Date(year + 1, 2, 31, 23, 59, 59, 999),
+    start: istToUtc(year, 3, 1, 0, 0, 0, 0),
+    end:   istToUtc(year + 1, 2, 31, 23, 59, 59, 999),
   };
 }
 
 function getCurrentFYLabel() {
-  const now = new Date();
-  const year = now.getMonth() >= 3 ? now.getFullYear() : now.getFullYear() - 1;
+  const { year: iy, month: im } = _istParts();
+  const year = im >= 3 ? iy : iy - 1;
   return `${year}-${String(year + 1).slice(2)}`;
 }
 
@@ -48,12 +78,25 @@ function getCurrentFYLabel() {
 async function calculateTDS(restaurantId, currentSettlementNetRs) {
   const fy = getFYBounds();
 
-  // Sum previous settlements in this FY
+  // Sum previous settlements in this FY.
+  //
+  // BUGFIX (§194O cumulative threshold): this previously matched on
+  // `period_end`, but Phase 5 balance-based settlement rows
+  // (settlement.service.js executeSettlement) NEVER write period_end /
+  // period_start — those are LEGACY weekly-cycle fields only
+  // (collections.js settlements schema: period_start/period_end are the
+  // legacy shape; Phase 5 rows carry *_paise + status). So
+  // cumulativePrevious was always 0 and the ₹5L FY-cumulative threshold
+  // was never applied across periods. We now match on `created_at`,
+  // which is `required: true` in the settlements schema and is stamped
+  // (`created_at: now`) on EVERY Phase 5 row at insert — both the
+  // snapshot-missing failed row and the main newRow. Legacy weekly rows
+  // also carry created_at, so the FY rollup stays correct for both shapes.
   const prev = await col('settlements').aggregate([
     {
       $match: {
         restaurant_id: restaurantId,
-        period_end: { $gte: fy.start, $lte: fy.end },
+        created_at: { $gte: fy.start, $lte: fy.end },
       },
     },
     { $group: { _id: null, total: { $sum: '$net_payout_rs' } } },
@@ -270,15 +313,27 @@ async function getFinancialSummary(restaurantId, period, from, to) {
   );
 
   // TDS is stamped on settlements (calculated by calculateTDS at settlement
-  // time, NOT per-order). Sum across settlements whose period falls inside
-  // the user's window — same query pattern getTaxSummary already uses for
-  // FY rollups. tds_applicable filters out below-threshold settlements that
-  // carry tds_amount_rs=0 anyway.
+  // time, NOT per-order). Sum across settlements whose row falls inside the
+  // user's window — same query pattern getTaxSummary uses for FY rollups.
+  // tds_applicable filters out below-threshold settlements that carry
+  // tds_amount_rs=0 anyway.
+  //
+  // BUGFIX (period_end never written): matched on `period_end`, but Phase 5
+  // balance-based settlement rows (settlement.service.js executeSettlement)
+  // NEVER write period_end / period_start — those are LEGACY weekly-cycle
+  // fields only (collections.js settlements schema: period_start/period_end
+  // are `{ type: 'date' }` with no `required`, populated only by
+  // jobs/settlement.js). So this find() silently missed every Phase 5 row
+  // and tds_rs was always 0 on the dashboard. We now match on `created_at`,
+  // which is `required: true` in the settlements schema and is stamped
+  // (`created_at: now`) on EVERY Phase 5 row at both insert paths (the
+  // snapshot-missing failed row and the main newRow). Legacy weekly rows
+  // also carry created_at, so the rollup stays correct for both shapes.
   const [agg, refundData, settlementsInPeriod] = await Promise.all([
     aggregateOrderFinancials(branchIds, start, end),
     getRefundSummary(branchIds, start, end),
     col('settlements').find(
-      { restaurant_id: restaurantId, period_end: { $gte: start, $lt: end } },
+      { restaurant_id: restaurantId, created_at: { $gte: start, $lt: end } },
       { projection: { tds_amount_rs: 1, tds_applicable: 1 } },
     ).toArray(),
   ]);
@@ -432,16 +487,31 @@ async function getTaxSummary(restaurantId, fyLabel) {
     total_gst_rs: round2(m.food_gst + m.pkg_gst + m.del_gst + m.subtotal * commRate * GST_PLATFORM_FEE_PCT / 100),
   }));
 
-  // TDS summary from settlements
+  // TDS summary from settlements.
+  //
+  // BUGFIX (period_end never written): matched on `period_end`, but Phase 5
+  // balance-based settlement rows (settlement.service.js executeSettlement)
+  // NEVER write period_end / period_start — those are LEGACY weekly-cycle
+  // fields only (collections.js settlements schema: period_start/period_end
+  // are `{ type: 'date' }` with no `required`, populated only by
+  // jobs/settlement.js). So the FY TDS rollup silently dropped every Phase 5
+  // row. We now match on `created_at` (schema `required: true`, stamped on
+  // EVERY row at both Phase 5 insert paths and on legacy rows too) and sort
+  // by it, since period_start is absent on Phase 5 rows.
   const settlements = await col('settlements').find({
     restaurant_id: restaurantId,
-    period_end: { $gte: fy.start, $lte: fy.end },
-  }).sort({ period_start: 1 }).toArray();
+    created_at: { $gte: fy.start, $lte: fy.end },
+  }).sort({ created_at: 1 }).toArray();
 
   const tdsEntries = settlements
     .filter(s => s.tds_applicable)
     .map(s => ({
-      period: `${s.period_start.toISOString().split('T')[0]} to ${s.period_end.toISOString().split('T')[0]}`,
+      // Legacy weekly rows expose period_start/period_end; Phase 5 rows do
+      // not (see schema note above), so fall back to created_at for the
+      // label — otherwise .toISOString() on undefined would 500 this route.
+      period: (s.period_start && s.period_end)
+        ? `${s.period_start.toISOString().split('T')[0]} to ${s.period_end.toISOString().split('T')[0]}`
+        : s.created_at.toISOString().split('T')[0],
       gross_payout_rs: round2(s.net_payout_rs + (s.tds_amount_rs || 0)),
       tds_rate_pct: s.tds_rate_pct || 0,
       tds_amount_rs: round2(s.tds_amount_rs || 0),
@@ -489,8 +559,18 @@ async function getPlatformOverview(period, from, to) {
       { $match: { status: 'refunded', updated_at: { $gte: start, $lt: end } } },
       { $group: { _id: null, total: { $sum: { $ifNull: ['$amount_rs', 0] } }, count: { $sum: 1 } } },
     ]).toArray(),
+    // BUGFIX (period_end never written): matched on `period_end`, but Phase
+    // 5 balance-based settlement rows (settlement.service.js
+    // executeSettlement) NEVER write period_end / period_start — those are
+    // LEGACY weekly-cycle fields only (collections.js settlements schema:
+    // period_start/period_end are `{ type: 'date' }` with no `required`,
+    // populated only by jobs/settlement.js). So total_payouts / total_tds /
+    // settlement_count on the admin platform overview silently excluded
+    // every Phase 5 settlement. We now match on `created_at` (schema
+    // `required: true`, stamped on EVERY Phase 5 row at both insert paths;
+    // legacy rows carry it too) against the SAME period bounds.
     col('settlements').aggregate([
-      { $match: { period_end: { $gte: start, $lte: end } } },
+      { $match: { created_at: { $gte: start, $lte: end } } },
       {
         $group: {
           _id: null,
@@ -568,11 +648,21 @@ async function getPlatformTaxSummary(fyLabel) {
     gst_on_platform_fee_rs: round2(m.platform_fees * GST_PLATFORM_FEE_PCT / 100),
   }));
 
-  // Per-restaurant TDS summary
+  // Per-restaurant TDS summary.
+  //
+  // BUGFIX (period_end never written): matched on `period_end`, but Phase 5
+  // balance-based settlement rows (settlement.service.js executeSettlement)
+  // NEVER write period_end / period_start — those are LEGACY weekly-cycle
+  // fields only (collections.js settlements schema: period_start/period_end
+  // are `{ type: 'date' }` with no `required`, populated only by
+  // jobs/settlement.js). So the admin per-restaurant FY TDS report silently
+  // dropped every Phase 5 settlement. We now match on `created_at` (schema
+  // `required: true`, stamped on EVERY Phase 5 row at both insert paths;
+  // legacy rows carry it too). The tds_applicable filter is unchanged.
   const tdsPerRestaurant = await col('settlements').aggregate([
     {
       $match: {
-        period_end: { $gte: fy.start, $lte: fy.end },
+        created_at: { $gte: fy.start, $lte: fy.end },
         tds_applicable: true,
       },
     },

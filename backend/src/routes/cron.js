@@ -273,7 +273,7 @@ router.get('/payout-retry', async (req, res) => {
 //   • no pending/processing LOYALTY_AWARD job for the orderId — if the
 //     job is still scheduled or in-flight, let it handle the send to
 //     preserve the 30-min delay semantics and avoid a race.
-router.post('/rating-requests', async (req, res) => {
+router.post('/rating-requests', async (req, res, next) => {
   try {
     const now = new Date();
     const candidates = await col('orders').find({
@@ -328,7 +328,7 @@ router.post('/rating-requests', async (req, res) => {
     res.json({ ok: true, processed, errors, skipped });
   } catch (e) {
     log.error({ err: e }, 'rating-requests cron error');
-    res.status(500).json({ ok: false, error: e.message });
+    return next(e);
   }
 });
 
@@ -346,7 +346,7 @@ router.post('/rating-requests', async (req, res) => {
 // Dedup: skip rows whose payload.feedbackEventId is already held by a
 // pending/processing FEEDBACK_ROUTING job. Same shape as the
 // rating-requests sweep above.
-router.post('/feedback-routing', async (req, res) => {
+router.post('/feedback-routing', async (req, res, next) => {
   try {
     const feedbackService = require('../services/feedbackService');
     const cutoff = new Date(Date.now() - feedbackService.ROUTING_DELAY_MS - 60 * 1000);
@@ -399,7 +399,7 @@ router.post('/feedback-routing', async (req, res) => {
     res.json({ ok: true, processed, skipped, errors });
   } catch (e) {
     log.error({ err: e }, 'feedback-routing cron error');
-    res.status(500).json({ ok: false, error: e.message });
+    return next(e);
   }
 });
 

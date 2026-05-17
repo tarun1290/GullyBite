@@ -2847,7 +2847,7 @@ router.post('/templates/sync', express.json(), async (req, res) => {
 });
 
 // POST /api/admin/templates — create a new template on Meta
-router.post('/templates', express.json(), async (req, res) => {
+router.post('/templates', express.json(), async (req, res, next) => {
   try {
     const { waba_id, name, category, language, components, allow_category_change } = req.body;
     if (!waba_id || !name || !components?.length) {
@@ -2864,13 +2864,17 @@ router.post('/templates', express.json(), async (req, res) => {
     });
     res.json(result);
   } catch (e) {
+    // Meta Graph returned a structured error → surface its message so the
+    // admin sees the actionable template-rejection reason (intentional
+    // client contract). Anything else is a local fault → mask.
     const metaErr = e.response?.data?.error;
-    res.status(metaErr ? 400 : 500).json({ error: metaErr?.message || e.message });
+    if (metaErr) return res.status(400).json({ error: metaErr.message });
+    return next(e);
   }
 });
 
 // PUT /api/admin/templates/:metaId — update template components on Meta
-router.put('/templates/:metaId', express.json(), async (req, res) => {
+router.put('/templates/:metaId', express.json(), async (req, res, next) => {
   try {
     const { components } = req.body;
     if (!components?.length) return res.status(400).json({ error: 'components required' });
@@ -2884,12 +2888,13 @@ router.put('/templates/:metaId', express.json(), async (req, res) => {
     res.json(result);
   } catch (e) {
     const metaErr = e.response?.data?.error;
-    res.status(metaErr ? 400 : 500).json({ error: metaErr?.message || e.message });
+    if (metaErr) return res.status(400).json({ error: metaErr.message });
+    return next(e);
   }
 });
 
 // DELETE /api/admin/templates — delete template by name from Meta
-router.delete('/templates', express.json(), async (req, res) => {
+router.delete('/templates', express.json(), async (req, res, next) => {
   try {
     const { waba_id, name } = req.body;
     if (!waba_id || !name) return res.status(400).json({ error: 'waba_id and name required' });
@@ -2903,7 +2908,8 @@ router.delete('/templates', express.json(), async (req, res) => {
     res.json(result);
   } catch (e) {
     const metaErr = e.response?.data?.error;
-    res.status(metaErr ? 400 : 500).json({ error: metaErr?.message || e.message });
+    if (metaErr) return res.status(400).json({ error: metaErr.message });
+    return next(e);
   }
 });
 

@@ -103,7 +103,10 @@ router.post('/dine-in/send', async (req, res) => {
   } catch (err) {
     log.warn({ err, feedbackEventId: fb._id }, 'dine-in send failed');
     await col('feedback_events').deleteOne({ _id: fb._id });
-    return res.status(502).json({ error: 'whatsapp_send_failed', reason: err?.response?.data?.error?.message || err.message });
+    // 502 + stable code is the intentional client contract (upstream
+    // WhatsApp send failed). The raw err/Graph message is logged above;
+    // do not echo it to the client.
+    return res.status(502).json({ error: 'whatsapp_send_failed' });
   }
 
   const waMessageId = sendResult?.messages?.[0]?.id || null;

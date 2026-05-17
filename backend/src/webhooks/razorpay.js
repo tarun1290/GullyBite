@@ -16,7 +16,7 @@ const ws = require('../services/websocket');
 const log = require('../utils/logger').child({ component: 'razorpay' });
 
 // ─── POST: PAYMENT EVENTS ─────────────────────────────────────
-router.post('/', express.raw({ type: '*/*' }), async (req, res) => {
+router.post('/', express.raw({ type: '*/*', limit: '1mb' }), async (req, res) => {
   res.sendStatus(200);
 
   let logId = null;

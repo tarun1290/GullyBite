@@ -40,7 +40,7 @@ router.get('/', (req, res) => {
 });
 
 // ─── POST: CATALOG EVENTS ─────────────────────────────────────
-router.post('/', express.raw({ type: '*/*' }), async (req, res) => {
+router.post('/', express.raw({ type: '*/*', limit: '1mb' }), async (req, res) => {
   // Respond immediately — Meta will retry if we take >5s
   res.sendStatus(200);
 

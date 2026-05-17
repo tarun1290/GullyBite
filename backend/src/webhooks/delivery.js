@@ -17,7 +17,7 @@ const ws = require('../services/websocket');
 const log = require('../utils/logger').child({ component: 'delivery' });
 
 // POST /webhooks/delivery — 3PL status updates
-router.post('/', express.json(), async (req, res) => {
+router.post('/', express.json({ limit: '256kb' }), async (req, res) => {
   // Always respond 200 immediately (3PL expects fast response)
   res.sendStatus(200);
 
@@ -89,10 +89,51 @@ router.post('/', express.json(), async (req, res) => {
 
     if (payload.driver_name || payload.partner_name)  $set.driver_name  = payload.driver_name || payload.partner_name;
     if (payload.driver_phone || payload.partner_phone) $set.driver_phone = payload.driver_phone || payload.partner_phone;
-    if (payload.driver_lat || payload.lat)             $set.driver_lat   = parseFloat(payload.driver_lat || payload.lat);
-    if (payload.driver_lng || payload.lng)             $set.driver_lng   = parseFloat(payload.driver_lng || payload.lng);
+
+    // driver_lat / driver_lng come straight from the (attacker-controllable)
+    // 3PL webhook payload. parseFloat happily yields NaN for garbage and
+    // doesn't range-check, which would poison the delivery doc / live map.
+    // Validate BOTH together: a lone valid coordinate is meaningless on a
+    // map, so if either is bad we drop both. These fields are non-essential
+    // (the doc + downstream broadcast/notifications are valid without them),
+    // so we SKIP the field and keep processing the status transition rather
+    // than rejecting an otherwise-legitimate webhook.
+    const rawLat = payload.driver_lat || payload.lat;
+    const rawLng = payload.driver_lng || payload.lng;
+    if (rawLat != null || rawLng != null) {
+      const lat = parseFloat(rawLat);
+      const lng = parseFloat(rawLng);
+      const latOk = Number.isFinite(lat) && lat >= -90 && lat <= 90;
+      const lngOk = Number.isFinite(lng) && lng >= -180 && lng <= 180;
+      if (rawLat != null && rawLng != null && latOk && lngOk) {
+        $set.driver_lat = lat;
+        $set.driver_lng = lng;
+      } else {
+        req.log.warn(
+          { taskId, field: 'driver_lat/driver_lng', rawLat, rawLng },
+          'Invalid driver coordinates in delivery webhook — skipping lat/lng',
+        );
+      }
+    }
+
     if (payload.tracking_url)                          $set.tracking_url = payload.tracking_url;
-    if (payload.estimated_time)                        $set.estimated_mins = parseInt(payload.estimated_time, 10);
+
+    // estimated_time is attacker-controllable too. parseInt → NaN for
+    // garbage and no upper bound. estimated_mins is purely informational
+    // (tracking ETA / broadcast), so on a bad value we SKIP the field and
+    // keep processing rather than rejecting the webhook.
+    // Bound: 0 .. 1440 minutes (24h) — any 3PL ETA beyond a day is bogus.
+    if (payload.estimated_time != null) {
+      const estMins = parseInt(payload.estimated_time, 10);
+      if (Number.isFinite(estMins) && estMins >= 0 && estMins <= 1440) {
+        $set.estimated_mins = estMins;
+      } else {
+        req.log.warn(
+          { taskId, field: 'estimated_time', rawEstimatedTime: payload.estimated_time },
+          'Invalid estimated_time in delivery webhook — skipping estimated_mins',
+        );
+      }
+    }
     if (newStatus === 'picked_up')                     $set.picked_up_at = new Date();
     if (newStatus === 'delivered')                     $set.delivered_at = new Date();
 

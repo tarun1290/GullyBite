@@ -35,7 +35,7 @@ function toIntegrationView(doc, branchName) {
 
 // ─── GET /api/restaurant/integrations ─────────────────────────
 // List all integrations for the authed restaurant's branches.
-router.get('/', async (req, res) => {
+router.get('/', async (req, res, next) => {
   try {
     const docs = await col('restaurant_integrations')
       .find({ restaurant_id: req.restaurantId })
@@ -51,7 +51,7 @@ router.get('/', async (req, res) => {
     const branchName = Object.fromEntries(branches.map(b => [String(b._id), b.name]));
 
     res.json(docs.map(d => toIntegrationView(d, branchName[String(d.branch_id)])));
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { return next(e); }
 });
 
 // ═══════════════════════════════════════════════════════════
@@ -72,7 +72,7 @@ async function _authBranch(req, res, branchId) {
 }
 
 // ─── GET /:platform/:branchId — integration for one branch ────
-router.get('/:platform/:branchId', async (req, res) => {
+router.get('/:platform/:branchId', async (req, res, next) => {
   const { platform, branchId } = req.params;
   try {
     const branch = await _authBranch(req, res, branchId);
@@ -84,11 +84,11 @@ router.get('/:platform/:branchId', async (req, res) => {
     if (!doc) return res.status(404).json({ error: 'Integration not configured for this branch' });
 
     res.json(toIntegrationView(doc, branch.name));
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { return next(e); }
 });
 
 // ─── POST /:platform/:branchId — upsert credentials ───────────
-router.post('/:platform/:branchId', async (req, res) => {
+router.post('/:platform/:branchId', async (req, res, next) => {
   if (!POS_INTEGRATIONS_ENABLED) return res.status(503).json(POS_503);
   const { platform, branchId } = req.params;
   if (!SERVICES[platform]) return res.status(400).json({ error: 'Unknown platform' });
@@ -132,13 +132,13 @@ router.post('/:platform/:branchId', async (req, res) => {
     };
     await col('restaurant_integrations').insertOne(doc);
     res.json({ success: true, integration: toIntegrationView(doc, branch.name) });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { return next(e); }
 });
 
 // ─── DELETE /:platform/:branchId — disconnect/disable ─────────
 // Soft disable (is_active:false) so the credential row survives for
 // re-activation and audit — mirrors the admin route's philosophy.
-router.delete('/:platform/:branchId', async (req, res) => {
+router.delete('/:platform/:branchId', async (req, res, next) => {
   if (!POS_INTEGRATIONS_ENABLED) return res.status(503).json(POS_503);
   const { platform, branchId } = req.params;
   try {
@@ -151,11 +151,11 @@ router.delete('/:platform/:branchId', async (req, res) => {
     );
     if (!r.matchedCount) return res.status(404).json({ error: 'Integration not configured for this branch' });
     res.json({ success: true });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { return next(e); }
 });
 
 // ─── POST /:platform/:branchId/sync — manual menu sync ────────
-router.post('/:platform/:branchId/sync', async (req, res) => {
+router.post('/:platform/:branchId/sync', async (req, res, next) => {
   if (!POS_INTEGRATIONS_ENABLED) return res.status(503).json(POS_503);
   const { platform, branchId } = req.params;
   const syncMode = req.body?.syncMode || 'incremental';
@@ -173,7 +173,7 @@ router.post('/:platform/:branchId/sync', async (req, res) => {
 
     const result = await triggerSync(platform, integration._id, req.restaurantId, syncMode);
     res.json(result);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { return next(e); }
 });
 
 // ─── PATCH /:platform/:branchId/toggle — flip is_active ───────
@@ -181,7 +181,7 @@ router.post('/:platform/:branchId/sync', async (req, res) => {
 // Accepts an explicit { isActive } in the body; when omitted, flips
 // the current value. Activating fires a fire-and-forget incremental
 // sync so the menu pulls in immediately (matches legacy behavior).
-router.patch('/:platform/:branchId/toggle', async (req, res) => {
+router.patch('/:platform/:branchId/toggle', async (req, res, next) => {
   if (!POS_INTEGRATIONS_ENABLED) return res.status(503).json(POS_503);
   const { platform, branchId } = req.params;
 
@@ -209,7 +209,7 @@ router.patch('/:platform/:branchId/toggle', async (req, res) => {
     }
 
     res.json({ success: true, isActive: integration.is_active });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { return next(e); }
 });
 
 // triggerSync and upsertMenu are now in ../services/posSync.js
