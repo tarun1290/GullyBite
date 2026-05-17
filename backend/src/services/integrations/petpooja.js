@@ -247,12 +247,18 @@ function parseWebhookEvent(payload) {
   try {
     const eventType = (payload.eventtype || payload.event_type || payload.type || '').toLowerCase();
     const outletId = payload.restaurantid || payload.restaurant_id || payload.outlet_id ||
+                     payload.restID ||
                      payload.restaurants?.[0]?.details?.menusharingcode || null;
     // Petpooja Push Menu: full menu payload has restaurants[] and items[] at root
     if (!eventType && (Array.isArray(payload.restaurants) || Array.isArray(payload.items))) {
       return { type: 'menu_update', outletId, rawPayload: payload };
     }
-    if (eventType.includes('stock') || eventType.includes('itemstock')) {
+    // PetPooja item stock toggle arrives as type:'item' (not 'stock').
+    // Scope the 'item' match tightly to stock-shaped payloads only.
+    if (
+      eventType.includes('stock') || eventType.includes('itemstock') ||
+      (eventType === 'item' && (payload.itemID || payload.inStock !== undefined))
+    ) {
       return { type: 'stock_update', outletId, items: parseStockUpdate(payload).items };
     }
     if (eventType.includes('menu')) {
@@ -267,11 +273,22 @@ function parseWebhookEvent(payload) {
 
 function parseStockUpdate(payload) {
   try {
-    const items = (payload.items || payload.data?.items || []).map(i => ({
-      pos_item_id: String(i.itemid || i.item_id || i.id || ''),
-      is_available: i.item_active === '1' || i.status === 'active' || i.in_stock === true || i.active === 1,
-    }));
-    return { items, outletId: payload.restaurantid || payload.restaurant_id || null };
+    let items;
+    if (Array.isArray(payload.itemID)) {
+      // PetPooja item stock toggle: itemID is an array of ID strings and
+      // inStock is a single root boolean applied to all of them.
+      items = payload.itemID.map(id => ({
+        pos_item_id: String(id),
+        is_available: payload.inStock === true,
+      }));
+    } else {
+      // Other POS integrations / object-array shape — keep intact.
+      items = (payload.items || payload.data?.items || []).map(i => ({
+        pos_item_id: String(i.itemid || i.item_id || i.id || ''),
+        is_available: i.item_active === '1' || i.status === 'active' || i.in_stock === true || i.active === 1,
+      }));
+    }
+    return { items, outletId: payload.restaurantid || payload.restaurant_id || payload.restID || null };
   } catch (e) {
     log.warn({ err: e }, 'parseStockUpdate failed');
     return { items: [], outletId: null };
