@@ -153,7 +153,6 @@ async function earnPoints(customerId, restaurantId, orderId, orderTotalRs, isFir
   }
 
   const loyalty = await getOrCreateLoyalty(customerId, restaurantId);
-  const newBalance  = (Number(loyalty.points_balance) || 0) + points;
   const newLifetime = (Number(loyalty.lifetime_points) || 0) + points;
   const expiresAt = new Date(Date.now() + (Number(cfg.points_expiry_days) || 90) * 24 * 60 * 60 * 1000);
   const description = isFirstOrder
@@ -169,21 +168,25 @@ async function earnPoints(customerId, restaurantId, orderId, orderTotalRs, isFir
     order_id: orderId ? String(orderId) : null,
     type: 'earn',
     points,
-    balance_after: newBalance,
+    balance_after: (Number(loyalty.points_balance) || 0) + points,
     remaining: points,
     expires_at: expiresAt,
     description,
     created_at: new Date(),
   });
 
-  await col('loyalty_points').updateOne(
+  const updated = await col('loyalty_points').findOneAndUpdate(
     { _id: loyalty._id },
-    { $set: {
-        points_balance: newBalance,
+    {
+      $inc: { points_balance: points },
+      $set: {
         lifetime_points: newLifetime,
         updated_at: new Date(),
-      } },
+      },
+    },
+    { returnDocument: 'after' },
   );
+  const newBalance = Number(updated?.value?.points_balance ?? updated?.points_balance) || 0;
 
   return { points, newBalance };
 }
@@ -252,9 +255,6 @@ async function redeemPoints(customerId, restaurantId, orderId, pointsToDeduct, d
   if (!cfg || !cfg.is_active) return { ok: false, reason: 'program_inactive' };
 
   const loyalty = await getOrCreateLoyalty(customerId, restaurantId);
-  if ((Number(loyalty.points_balance) || 0) < points) {
-    return { ok: false, reason: 'insufficient_balance' };
-  }
 
   const earnRows = await col('loyalty_transactions').find({
     restaurant_id: String(restaurantId),
@@ -284,7 +284,23 @@ async function redeemPoints(customerId, restaurantId, orderId, pointsToDeduct, d
 
   const ratio = Math.max(1, Number(cfg.points_to_rupee_ratio) || 1);
   const discountValueRs = Number(discountRs) > 0 ? Math.floor(Number(discountRs)) : Math.floor(points / ratio);
-  const newBalance = (Number(loyalty.points_balance) || 0) - points;
+
+  const updated = await col('loyalty_points').findOneAndUpdate(
+    { _id: loyalty._id, $expr: { $gte: ['$points_balance', points] } },
+    {
+      $inc: { points_balance: -points },
+      $set: {
+        last_redemption_date: new Date(),
+        updated_at: new Date(),
+      },
+    },
+    { returnDocument: 'after' },
+  );
+  const updatedDoc = updated?.value ?? updated;
+  if (!updatedDoc) {
+    return { ok: false, reason: 'insufficient_balance' };
+  }
+  const newBalance = Number(updatedDoc.points_balance) || 0;
 
   await col('loyalty_transactions').insertOne({
     _id: newId(),
@@ -297,17 +313,6 @@ async function redeemPoints(customerId, restaurantId, orderId, pointsToDeduct, d
     description: `Redeemed ${points} pts for ₹${discountValueRs} discount`,
     created_at: new Date(),
   });
-
-  await col('loyalty_points').updateOne(
-    { _id: loyalty._id },
-    {
-      $set: {
-        points_balance: newBalance,
-        last_redemption_date: new Date(),
-        updated_at: new Date(),
-      },
-    },
-  );
 
   return { ok: true, discount_rs: discountValueRs, discountRs: discountValueRs, points_redeemed: points, pointsRedeemed: points, balance: newBalance };
 }
@@ -322,7 +327,6 @@ async function manualCredit({ restaurantId, customerId, points, description, act
   if (!cfg) return { ok: false, reason: 'no_config' };
 
   const loyalty = await getOrCreateLoyalty(customerId, restaurantId);
-  const newBalance  = (Number(loyalty.points_balance) || 0) + p;
   const newLifetime = (Number(loyalty.lifetime_points) || 0) + p;
   const expiresAt = new Date(Date.now() + (Number(cfg.points_expiry_days) || 90) * 24 * 60 * 60 * 1000);
 
@@ -333,7 +337,7 @@ async function manualCredit({ restaurantId, customerId, points, description, act
     order_id: null,
     type: 'manual_credit',
     points: p,
-    balance_after: newBalance,
+    balance_after: (Number(loyalty.points_balance) || 0) + p,
     remaining: p,
     expires_at: expiresAt,
     description: description || 'Manual credit',
@@ -341,14 +345,18 @@ async function manualCredit({ restaurantId, customerId, points, description, act
     created_at: new Date(),
   });
 
-  await col('loyalty_points').updateOne(
+  const updated = await col('loyalty_points').findOneAndUpdate(
     { _id: loyalty._id },
-    { $set: {
-        points_balance: newBalance,
+    {
+      $inc: { points_balance: p },
+      $set: {
         lifetime_points: newLifetime,
         updated_at: new Date(),
-      } },
+      },
+    },
+    { returnDocument: 'after' },
   );
+  const newBalance = Number(updated?.value?.points_balance ?? updated?.points_balance) || 0;
 
   return { ok: true, awarded: p, balance: newBalance };
 }

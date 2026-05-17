@@ -27,7 +27,7 @@ const log = require('../utils/logger').child({ component: 'captainReengagement' 
 
 const TEMPLATE_NAME = 'marketing_captain_listing_live_v1';
 const REDIRECT_BASE = 'https://gullybite.duckdns.org/r';
-const DEFAULT_MARKUP_MULTIPLIER = 1.5;
+const DEFAULT_MARKUP_MULTIPLIER = 1.0;
 
 // Inline 6-char alphanumeric code generator — matches captainHandler.js
 // order_now branch character set + length. Keep this generator local so
@@ -101,7 +101,7 @@ async function runReengagementJob(db, redisClient, listingId, cityId) {
 
   // Platform-pricing markup multiplier (same source as marketingCampaigns.js).
   const pricingSettings = await db.collection('platform_settings').findOne(
-    { _id: 'pricing' },
+    { _id: 'wa_pricing' },
     { projection: { markup_multiplier: 1 } },
   );
   const markupMultiplier = Number.isFinite(Number(pricingSettings?.markup_multiplier))

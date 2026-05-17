@@ -171,6 +171,8 @@ export default function BranchFormModal({
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mapInstanceRef = useRef<google.maps.Map | null>(null);
   const mapMarkerRef = useRef<google.maps.Marker | null>(null);
+  const firstFieldRef = useRef<HTMLInputElement | null>(null);
+  const prevFocusRef = useRef<HTMLElement | null>(null);
 
   const handlePinDrop = async ({ lat, lng }: { lat: number; lng: number }) => {
     setGeocoding(true);
@@ -234,6 +236,32 @@ export default function BranchFormModal({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, isEdit, existingBranch]);
+
+  // Esc cancels — never submits. Mirrors CostConfirmCard's keydown
+  // pattern (window listener, e.key === 'Escape', cleanup on unmount).
+  // This modal collects critical onboarding branch data: the only
+  // keyboard exit is a dismissal via onClose, never handleSave.
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [open, onClose]);
+
+  // Focus management: park focus on the first form field (Branch Name)
+  // rather than the close button, so keyboard users land in the form.
+  // Capture the pre-mount focus owner and restore it on close so the
+  // operator returns to where they were after the modal dismisses.
+  useEffect(() => {
+    if (!open) return;
+    const active = document.activeElement;
+    prevFocusRef.current = active instanceof HTMLElement ? active : null;
+    firstFieldRef.current?.focus();
+    return () => {
+      const prev = prevFocusRef.current;
+      if (prev instanceof HTMLElement) prev.focus();
+    };
+  }, [open]);
 
   const setField = (k: keyof FormState, v: string) => setForm((f) => ({ ...f, [k]: v }));
 
@@ -428,6 +456,7 @@ export default function BranchFormModal({
             <div className="fg">
               <label>Branch Name ★</label>
               <input
+                ref={firstFieldRef}
                 value={form.name}
                 onChange={(e) => setField('name', e.target.value)}
                 placeholder="Koramangala Outlet"
@@ -454,12 +483,25 @@ export default function BranchFormModal({
                 <div className="absolute right-[10px] top-[34px] text-xs text-dim">⏳</div>
               )}
               {showSuggest && suggestions.length > 0 && (
-                <div className="absolute top-full left-0 right-0 z-10 bg-surface border border-rim rounded-md max-h-[240px] overflow-y-auto shadow-[0_4px_12px_rgba(0,0,0,0.12)]">
+                <div
+                  role="listbox"
+                  aria-label="Address suggestions"
+                  className="absolute top-full left-0 right-0 z-10 bg-surface border border-rim rounded-md max-h-[240px] overflow-y-auto shadow-[0_4px_12px_rgba(0,0,0,0.12)]"
+                >
                   {suggestions.map((s, i) => (
                     <div
                       key={`${s.place_id}-${i}`}
+                      role="option"
+                      tabIndex={0}
+                      aria-selected={false}
                       onClick={() => pickSuggestion(s)}
-                      className="py-2.5 px-3.5 cursor-pointer text-sm border-b border-bdr leading-[1.4] hover:bg-ink2"
+                      onKeyDown={(e: React.KeyboardEvent<HTMLDivElement>) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          pickSuggestion(s);
+                        }
+                      }}
+                      className="py-2.5 px-3.5 cursor-pointer text-sm border-b border-bdr leading-[1.4] hover:bg-ink2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-acc"
                     >
                       <div className="font-semibold">{s.mainText}</div>
                       <div className="text-xs text-dim mt-0.5">

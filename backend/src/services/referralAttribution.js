@@ -124,8 +124,13 @@ async function refreshOrCreateReferral(params) {
 async function attributeOrder(orderId, orderSubtotal, referralId) {
   const commissionAmount = parseFloat((orderSubtotal * COMMISSION_PCT / 100).toFixed(2));
 
-  await col('referrals').updateOne(
-    { _id: referralId },
+  // Atomic conditional claim: status:'active' in the filter makes this an
+  // all-or-nothing convert. If two concurrent orders try to attribute the
+  // same active referral, only the first updateOne matches (modifiedCount===1)
+  // and flips it to 'converted' + commission_status:'pending'; the second
+  // matches nothing — preventing double commission attribution.
+  const res = await col('referrals').updateOne(
+    { _id: referralId, status: 'active' },
     {
       $set: {
         status: 'converted',
@@ -142,6 +147,17 @@ async function attributeOrder(orderId, orderSubtotal, referralId) {
       },
     }
   );
+
+  // Race lost — the referral was already converted by a concurrent order (or
+  // is no longer active). Do NOT proceed: this is not a fresh conversion, so
+  // no commission/ledger work should follow. Mirror the function's existing
+  // no-op return contract (implicit void) by returning here without logging
+  // an attribution.
+  if (res.modifiedCount === 0) {
+    log.info({ orderId, referralId, subtotalRs: orderSubtotal }, 'Order attribution skipped — referral already converted (race lost)');
+    return;
+  }
+
   log.info({ orderId, subtotalRs: orderSubtotal, commissionRs: commissionAmount }, 'Order attributed');
 }
 

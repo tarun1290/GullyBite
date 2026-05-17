@@ -485,8 +485,13 @@ const _createOrderImpl = async ({ convId, customerId, branchId, cart, subtotalRs
       // referralAttribution.confirmCommission's query at payment time —
       // without them the GBREF commission + GST ledger debits silently
       // never write. See services/referralAttribution.js:160-163.
-      await col('referrals').updateOne(
-        { _id: referralId },
+      // Atomic conditional claim: add status:'active' to the filter so two
+      // concurrent orders for the same referral can't both convert it (live
+      // prod double-attribution race). Only the order that wins the claim
+      // (modifiedCount === 1) flips it to 'converted' + sets
+      // commission_status:'pending'; the loser's updateOne matches nothing.
+      const convRes = await col('referrals').updateOne(
+        { _id: referralId, status: 'active' },
         {
           $set: {
             status: 'converted',
@@ -500,7 +505,13 @@ const _createOrderImpl = async ({ convId, customerId, branchId, cart, subtotalRs
         },
         sOpt
       );
+      // Race lost — the referral was already converted by a concurrent order
+      // (or is no longer active). This order is NOT a fresh conversion, so
+      // skip every per-conversion side-effect below: no duplicate captain
+      // stamp on the customer, no duplicate gbref_order_attributed signal.
+      const convClaimed = (convRes.modifiedCount > 0);
 
+      if (convClaimed) {
       // GBREF (City Captain) attribution stamp on the customer doc.
       // Fire-and-forget — never await, never throw. Powers CRM segments
       // like "captain-acquired in last 90 days" without joining
@@ -561,6 +572,7 @@ const _createOrderImpl = async ({ convId, customerId, branchId, cart, subtotalRs
           })();
         });
       }
+      } // end if (convClaimed) — per-conversion side-effects only on winning claim
     }
 
     if (cart.length) {

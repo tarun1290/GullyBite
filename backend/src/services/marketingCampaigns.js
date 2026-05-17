@@ -119,16 +119,39 @@ async function finalize(campaignId, status, patch = {}) {
 }
 
 async function sendCampaign(campaignId) {
-  const campaign = await col('marketing_campaigns').findOne({ _id: campaignId });
-  if (!campaign) {
-    log.warn({ campaignId }, 'sendCampaign: not found');
-    return { ok: false, reason: 'not_found' };
+  // Atomic claim — single-doc findOneAndUpdate is the only race-safe
+  // way to enter the send path. The previous two-step [findOne status
+  // guard] + [later updateOne → status:'sending'] left a window where
+  // two concurrent invocations (e.g. manual confirm + scheduled-send
+  // sweep) both read 'scheduled', both proceeded, and double-sent /
+  // double-debited the wallet. Flipping draft/scheduled → 'sending'
+  // here, in one atomic op, lets exactly one caller win the claim.
+  // mongodb v6 findOneAndUpdate returns the doc directly (no {value}
+  // wrapper); returnDocument:'after' gives us the claimed doc to use
+  // for the rest of the function.
+  const claimed = await col('marketing_campaigns').findOneAndUpdate(
+    { _id: campaignId, status: { $in: ['draft', 'scheduled'] } },
+    { $set: { status: 'sending', sending_started_at: new Date() } },
+    { returnDocument: 'after' },
+  );
+  if (!claimed) {
+    // Either the campaign doesn't exist, or another concurrent
+    // invocation already moved it out of draft/scheduled. Disambiguate
+    // with a plain read so the early-return shape matches exactly what
+    // the old two-step guard returned for each case (not_found vs
+    // already_processed) — callers / tests depend on this shape.
+    const existing = await col('marketing_campaigns').findOne(
+      { _id: campaignId },
+      { projection: { status: 1 } },
+    );
+    if (!existing) {
+      log.warn({ campaignId }, 'sendCampaign: not found');
+      return { ok: false, reason: 'not_found' };
+    }
+    log.info({ campaignId, status: existing.status }, 'sendCampaign: already processed (claim lost)');
+    return { ok: false, reason: 'already_processed', status: existing.status };
   }
-  // Idempotency guard — only draft/scheduled can enter send path.
-  if (!['draft', 'scheduled'].includes(campaign.status)) {
-    log.info({ campaignId, status: campaign.status }, 'sendCampaign: already processed');
-    return { ok: false, reason: 'already_processed', status: campaign.status };
-  }
+  const campaign = claimed;
 
   try {
     const restaurantId = campaign.restaurant_id;
@@ -308,12 +331,16 @@ async function sendCampaign(campaignId) {
         .map((c) => ({ customer: c, profile: profileById.get(c._id) }));
     }
 
-    // Status flip to 'sending' + refresh target_count. No-op if already
-    // sending (shouldn't happen thanks to the guard above).
+    // Stamp sent_at + target_count once the recipient list is resolved.
+    // The status flip to 'sending' already happened atomically up front
+    // (the claim), so it is intentionally NOT repeated here. sent_at and
+    // target_count are recipient-count / timing dependent (sent_at gates
+    // attributeOrderConversion's 48h window; target_count is the rate
+    // denominator in trackWebhookStatus) so they must be written here,
+    // after recipients is known — not folded into the up-front claim.
     await col('marketing_campaigns').updateOne(
       { _id: campaignId },
       { $set: {
-          status: 'sending',
           sent_at: new Date(),
           target_count: recipients.length,
           updated_at: new Date(),

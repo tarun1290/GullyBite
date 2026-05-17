@@ -424,6 +424,46 @@ const INDEXES = [
   // from Petpooja's restID.
   { collection: 'restaurant_integrations', index: { platform: 1, branch_id: 1 } },
   { collection: 'restaurant_integrations', index: { platform: 1, outlet_id: 1 } },
+
+  // ─── DINE-IN VISITS + LOYALTY DATA-CORRECTNESS ─────────────
+  // Unique compound backs the dine-in per-day dedupe upsert — at most
+  // one visit row per (restaurant, branch, customer, calendar day) so a
+  // double scan / duplicate webhook can't double-count a visit.
+  { collection: 'dine_in_visits', index: { restaurant_id: 1, branch_id: 1, customer_id: 1, visit_date: 1 }, options: { unique: true, background: false } },
+  // Analytics — per-branch visits newest-first.
+  { collection: 'dine_in_visits', index: { branch_id: 1, created_at: -1 }, options: { background: false } },
+  // Loyalty ledger — one accrual/redemption row per (restaurant, customer,
+  // order, type). Sparse because order_id is null for manual credits, so
+  // the unique constraint only applies to order-linked rows and null
+  // order_ids don't collide with each other.
+  { collection: 'loyalty_transactions', index: { restaurant_id: 1, customer_id: 1, order_id: 1, type: 1 }, options: { unique: true, sparse: true, background: false } },
+  // At most one ACTIVE referral per (customer, restaurant) pair — partial
+  // so historical/expired referral rows don't collide. Mirror of the
+  // referral_link_requests / settlements partial-unique pattern above.
+  { collection: 'referrals', index: { customer_id: 1, restaurant_id: 1 }, options: { unique: true, background: false, partialFilterExpression: { status: 'active' } } },
+
+  // ─── SEGMENTATION / ANALYTICS COMPOUND INDEXES ─────────────
+  // Additional restaurant_id-prefixed cuts the segment builder filters
+  // on. The earlier customer_rfm_profiles block (above) declares the
+  // total_spend_rs / order_count cuts DESCENDING; these ASCENDING
+  // variants back range/sort queries the descending ones don't cover.
+  // first_order_at(asc) is intentionally omitted — already covered by
+  // the identical { restaurant_id: 1, first_order_at: 1 } on line 162.
+  { collection: 'customer_rfm_profiles', index: { restaurant_id: 1, total_spend_rs: 1 } },
+  { collection: 'customer_rfm_profiles', index: { restaurant_id: 1, order_count: 1 } },
+  { collection: 'customer_rfm_profiles', index: { restaurant_id: 1, birthday: 1 } },
+  { collection: 'customer_rfm_profiles', index: { restaurant_id: 1, acquisition_source: 1 } },
+  // Segment analytics — per-customer marketing message history by
+  // category within a tenant (e.g. "promo sends to this customer").
+  { collection: 'marketing_messages', index: { restaurant_id: 1, customer_id: 1, category: 1 } },
+  // Segment analytics — per-customer order history within a tenant,
+  // newest-first. NOT a duplicate: the existing orders indexes are
+  // (restaurant_id, created_at) line 11 — no customer_id middle key,
+  // so it can't serve a (restaurant_id + customer_id) filtered sort —
+  // and (customer_id, created_at) line 12 which leads with customer_id
+  // (different access pattern, no restaurant_id prefix). This composite
+  // is the only one that backs the tenant-scoped per-customer timeline.
+  { collection: 'orders', index: { restaurant_id: 1, customer_id: 1, created_at: -1 } },
 ];
 
 async function ensureIndexes() {

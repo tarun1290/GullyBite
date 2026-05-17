@@ -127,6 +127,47 @@ function validateConditions(conditions) {
   if (!Array.isArray(conditions)) {
     return { valid: false, errors: ['conditions must be an array'] };
   }
+  // Root guard: a missing/empty conditions set — or one that contains
+  // only blank/no-op entries (null, non-objects, or objects with no
+  // field+op pair, i.e. empty "groups") — resolves to the ENTIRE
+  // customer base downstream (buildProfileQuery emits a
+  // restaurant-only filter for an empty conditions array). Reject it
+  // here so an empty segment can never blast everyone. Conditions are
+  // a flat leaf array in this builder (no nested groups), so an
+  // "empty group" is any entry that carries neither a field nor an op.
+  const hasLeaf = conditions.some(
+    (c) => c && typeof c === 'object' && !Array.isArray(c) &&
+      (c.field !== undefined || c.op !== undefined),
+  );
+  if (!hasLeaf) {
+    return { valid: false, errors: ['At least one condition is required'] };
+  }
+  // OR / nested-group guard. The persisted schema (customer_segments
+  // .conditions and marketing_campaigns.segment_conditions in
+  // schemas/collections.js) is a FLAT array of { field, op, value }
+  // leaves with NO group-level logical operator — AND-only by design,
+  // every condition must match. buildProfileQuery therefore only ANDs.
+  // If an OR group (or top-level OR logic) is ever submitted it would
+  // otherwise be silently flattened to an AND and resolve to the WRONG
+  // recipient set with no error. Reject it loudly here instead, in the
+  // SAME { valid:false, errors:[...] } shape used by the guards above.
+  // Detected forms: a leaf carrying an explicit logic/operator of 'or'
+  // (a nested-group marker), any entry with a nested `conditions`
+  // array (a group), or a sentinel top-level logic:'or' entry.
+  const hasOrGroup = conditions.some((c) => {
+    if (!c || typeof c !== 'object' || Array.isArray(c)) return false;
+    if (Array.isArray(c.conditions)) return true;
+    const groupOp = typeof c.logic === 'string'
+      ? c.logic
+      : (typeof c.operator === 'string' ? c.operator : null);
+    return groupOp != null && groupOp.toLowerCase() === 'or';
+  });
+  if (hasOrGroup) {
+    return {
+      valid: false,
+      errors: ['OR / nested condition groups are not supported — conditions are AND-only'],
+    };
+  }
   const errors = [];
   conditions.forEach((cond, idx) => {
     const prefix = `[${idx}]`;
@@ -168,6 +209,15 @@ function validateConditions(conditions) {
 // restaurantId and AND-combining every non-captain condition. Captain
 // conditions are silently skipped here; the caller handles them via
 // the customers/referrals path.
+//
+// AND-only is not a builder shortcut — it's dictated by the persisted
+// schema: customer_segments.conditions / segment_conditions store a
+// FLAT leaf array with no group-level operator (see
+// schemas/collections.js). There is therefore no OR group to honour
+// here, and never a top-level $or to scope. OR groups, if ever
+// submitted, are rejected upstream by validateConditions (the
+// OR / nested-group guard) so they surface as a 400 instead of being
+// silently flattened to an AND and resolving the wrong recipients.
 //
 // Validation should run BEFORE this function — buildProfileQuery
 // assumes inputs already passed validateConditions, so it doesn't

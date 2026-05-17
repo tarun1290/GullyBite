@@ -73,6 +73,13 @@ router.post('/create', async (req, res) => {
   let savedSegmentDoc = null;
   const inlineConditions = Array.isArray(segment_conditions) ? segment_conditions : [];
   if (target_segment === 'compound') {
+    // Explicit empty-audience guard for compound: an empty/missing
+    // segment_conditions on a compound campaign would resolve to the
+    // entire customer base. Reject BEFORE the service layer / persist
+    // so an empty segment can never trigger a full blast.
+    if (inlineConditions.length === 0) {
+      return res.status(400).json({ error: 'invalid_conditions', errors: ['At least one condition is required'] });
+    }
     const v = segmentBuilder.validateConditions(inlineConditions);
     if (!v.valid) {
       return res.status(400).json({ error: 'invalid_conditions', errors: v.errors });
@@ -435,6 +442,13 @@ router.post('/segments', async (req, res) => {
     return res.status(400).json({ error: 'name is required' });
   }
   const conds = Array.isArray(conditions) ? conditions : [];
+  // Empty-audience guard: a saved segment with no conditions resolves
+  // to the entire customer base when later used by a campaign. Reject
+  // BEFORE persisting to customer_segments so it can't be stored and
+  // reused as an everyone-blast.
+  if (conds.length === 0) {
+    return res.status(400).json({ error: 'invalid_conditions', errors: ['At least one condition is required'] });
+  }
   const v = segmentBuilder.validateConditions(conds);
   if (!v.valid) {
     return res.status(400).json({ error: 'invalid_conditions', errors: v.errors });

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState, type MouseEvent } from 'react';
 import {
   confirmMarketingCampaign,
   type MarketingCampaignEstimate,
@@ -28,6 +28,28 @@ function fmtRs(n: number): string {
 export default function CostConfirmCard({ campaignId, estimate, onConfirm, onCancel }: CostConfirmCardProps) {
   const [busy, setBusy] = useState<boolean>(false);
   const [err, setErr] = useState<string | null>(null);
+  const cancelBtnRef = useRef<HTMLButtonElement | null>(null);
+  const prevFocusRef = useRef<HTMLElement | null>(null);
+
+  // Esc cancels — never confirms. Mirrors OrderDetailModal's keydown
+  // pattern (window listener, e.key === 'Escape', cleanup on unmount).
+  // This is a money gate: the only keyboard exit is a dismissal.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onCancel(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onCancel]);
+
+  // Focus management: park focus on Cancel (the safe default for a
+  // wallet debit — an accidental Enter dismisses, it does not spend).
+  // Capture the pre-mount focus owner and restore it on unmount so the
+  // operator lands back where they were after the modal closes.
+  useEffect(() => {
+    const active = document.activeElement;
+    prevFocusRef.current = active instanceof HTMLElement ? active : null;
+    cancelBtnRef.current?.focus();
+    return () => { prevFocusRef.current?.focus(); };
+  }, []);
 
   const proceed = async () => {
     if (busy) return;
@@ -44,8 +66,14 @@ export default function CostConfirmCard({ campaignId, estimate, onConfirm, onCan
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-      <div className="bg-white rounded-r border border-rim w-[440px] max-w-[92vw] p-6 flex flex-col gap-4 shadow-default">
+    <div
+      onClick={onCancel}
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
+    >
+      <div
+        onClick={(e: MouseEvent<HTMLDivElement>) => e.stopPropagation()}
+        className="bg-white rounded-r border border-rim w-[440px] max-w-[92vw] p-6 flex flex-col gap-4 shadow-default"
+      >
         <div>
           <h3 className="m-0 text-lg font-semibold text-tx">Ready to send?</h3>
           <p className="m-0 mt-1 text-sm text-dim">
@@ -84,6 +112,7 @@ export default function CostConfirmCard({ campaignId, estimate, onConfirm, onCan
 
         <div className="flex justify-end gap-2 pt-1">
           <button
+            ref={cancelBtnRef}
             type="button"
             className="btn-g btn-sm"
             onClick={onCancel}

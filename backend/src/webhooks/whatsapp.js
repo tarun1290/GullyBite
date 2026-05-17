@@ -4529,44 +4529,99 @@ const handleDineInCheckin = async (phone, branch, restaurant, opts = {}) => {
     const thresholds = Array.isArray(dineCfg.milestone_thresholds) ? dineCfg.milestone_thresholds : [];
     const now = new Date();
 
-    // visit_number = count of prior visits at this branch + 1. Computed
-    // BEFORE we insert the new ledger row so the value reflects the
-    // current scan, not the row we're about to write.
-    const priorVisits = await col('dine_in_visits').countDocuments({
+    // IST calendar date as 'YYYY-MM-DD' — same approach as
+    // routes/admin.js:_todayISTBoundary (en-CA locale formats as
+    // YYYY-MM-DD; Intl, no extra date lib). This is the per-day dedupe
+    // bucket so a customer can only earn one dine-in credit per IST day.
+    const visit_date = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit',
+    }).format(now);
+
+    // Small helper so the two early-bail branches (gap / already-credited)
+    // send a consistent WA reply, mirroring the thanks-only path above.
+    const sendDineInReply = async (msg) => {
+      if (waAccount?.phone_number_id && waAccount?.access_token) {
+        await wa.sendText(waAccount.phone_number_id, waAccount.access_token, phone, msg)
+          .catch((err) => log.warn({ err: err?.message }, 'dine-in: early-return reply failed'));
+      }
+    };
+
+    // PROBLEM 3 — minimum gap between check-ins. Query the most recent
+    // prior visit for this (restaurant, branch, customer) inside the gap
+    // window. Done BEFORE the upsert so a too-recent scan never inserts
+    // a visit row (no orphan rows on the gap-bail) and never credits.
+    const minGapHours = Number(dineCfg.min_checkin_gap_hours) || 4;
+    const minimumGapMs = minGapHours * 3600000;
+    const recentVisit = await col('dine_in_visits').findOne(
+      {
+        restaurant_id: String(restaurant._id),
+        branch_id: String(branch._id),
+        customer_id: String(customer._id),
+        created_at: { $gt: new Date(now.getTime() - minimumGapMs) },
+      },
+      { sort: { created_at: -1 } },
+    );
+    if (recentVisit) {
+      await sendDineInReply('You have already checked in recently — thanks for visiting again!');
+      return { ok: true, reason: 'checkin_too_recent', customer_id: String(customer._id) };
+    }
+
+    // PROBLEM 1 — double-credit race. Upsert on the per-IST-day dedupe
+    // key (restaurant_id, branch_id, customer_id, visit_date) instead of
+    // count-then-insert. The native driver (mongodb v6) exposes
+    // lastErrorObject.upserted ONLY when this call inserted the doc, so
+    // includeResultMetadata:true lets us reliably tell a fresh check-in
+    // from one that already existed for today (already credited).
+    const visitRes = await col('dine_in_visits').findOneAndUpdate(
+      {
+        restaurant_id: String(restaurant._id),
+        branch_id: String(branch._id),
+        customer_id: String(customer._id),
+        visit_date,
+      },
+      {
+        $setOnInsert: {
+          _id: newId(),
+          source,
+          points_earned: pointsPerVisit,
+          created_at: now,
+        },
+      },
+      { upsert: true, returnDocument: 'after', includeResultMetadata: true },
+    );
+    // lastErrorObject.upserted is set iff THIS call created the doc.
+    const isNewCheckin = !!visitRes?.lastErrorObject?.upserted;
+    if (!isNewCheckin) {
+      // Already checked in today for this branch — no points, no dupe.
+      await sendDineInReply('You are already checked in for today. See you on your next visit!');
+      return { ok: true, reason: 'already_checked_in_today', customer_id: String(customer._id) };
+    }
+
+    // visit_number = count of visits at this branch (the row we just
+    // upserted is included, so the count IS this visit's number). The
+    // per-day upsert above makes this race-safe for the common path.
+    const visit_number = await col('dine_in_visits').countDocuments({
       customer_id: String(customer._id),
       branch_id: String(branch._id),
     });
-    const visit_number = priorVisits + 1;
 
-    await col('dine_in_visits').insertOne({
-      _id: newId(),
-      restaurant_id: String(restaurant._id),
-      branch_id: String(branch._id),
-      customer_id: String(customer._id),
-      source,
-      points_earned: pointsPerVisit,
-      visit_number,
-      created_at: now,
-    });
-
-    // Atomic $inc, then read back to compute milestone_hit against the
-    // PRE-increment balance. Using findOneAndUpdate with returnDocument
-    // 'after' gives us the new balance in one round-trip; we derive the
-    // pre-balance by subtracting points_per_visit. Concurrent check-ins
-    // for the same customer (unlikely but possible) would each see their
-    // own slice of the increment and fire milestone independently — the
-    // 48h frequency cap in executeJourney keeps that from sending twice.
-    const updated = await col('customers').findOneAndUpdate(
+    // Atomic $inc, then derive milestone_hit from the PRE-increment
+    // balance. mongodb v6 findOneAndUpdate returns the doc directly (no
+    // {value} wrapper); using returnDocument:'before' gives the exact
+    // pre-update balance so milestone-crossing is computed correctly even
+    // under concurrent check-ins (each $inc is atomic). The 48h frequency
+    // cap in executeJourney still guards against sending a dupe.
+    const before = await col('customers').findOneAndUpdate(
       { _id: String(customer._id) },
       {
         $inc: { dine_in_points: pointsPerVisit, dine_in_total_visits: 1 },
         $set: { updated_at: now },
       },
-      { returnDocument: 'after' },
+      { returnDocument: 'before' },
     );
-    const after = updated?.value || await col('customers').findOne({ _id: String(customer._id) });
-    const points_balance = Number(after?.dine_in_points || 0);
-    const prevBalance = points_balance - pointsPerVisit;
+    const prevBalance = Number(before?.dine_in_points || 0);
+    const points_balance = prevBalance + pointsPerVisit;
+    const after = before;
 
     // milestone_hit: the LARGEST threshold strictly between prev and
     // new (inclusive of new). If multiple thresholds were crossed in

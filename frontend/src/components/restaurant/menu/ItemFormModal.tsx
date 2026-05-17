@@ -176,6 +176,8 @@ export default function ItemFormModal({
   const [advTags, setAdvTags] = useState<string>(seed.advTags);
   const [saving, setSaving] = useState<boolean>(false);
   const fileRef = useRef<HTMLInputElement | null>(null);
+  const modalRef = useRef<HTMLDivElement | null>(null);
+  const prevFocusRef = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
     if (!formBranchId) return;
@@ -183,6 +185,44 @@ export default function ItemFormModal({
       setCategories(Array.isArray(list) ? (list as Category[]) : []);
     }).catch(() => {});
   }, [formBranchId]);
+
+  // Esc cancels — never saves (mirrors CostConfirmCard's window keydown
+  // pattern: e.key === 'Escape', cleanup on unmount). Esc is the only
+  // keyboard exit and is deliberately left out of the Tab trap below.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  // Focus management + manual Tab trap. Capture the pre-mount focus owner,
+  // move focus to the first focusable element in the modal, and restore it
+  // on unmount. Tab/Shift+Tab wrap within the modal container.
+  useEffect(() => {
+    const active = document.activeElement;
+    prevFocusRef.current = active instanceof HTMLElement ? active : null;
+    const SEL = 'button,input,select,textarea,[tabindex]:not([tabindex="-1"]),a[href]';
+    const focusables = (): HTMLElement[] =>
+      Array.from(modalRef.current?.querySelectorAll<HTMLElement>(SEL) || [])
+        .filter((el) => !el.hasAttribute('disabled'));
+    focusables()[0]?.focus();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Tab') return;
+      const els = focusables();
+      if (!els.length) return;
+      const first = els[0];
+      const last = els[els.length - 1];
+      const act = document.activeElement;
+      if (e.shiftKey && act === first) { e.preventDefault(); last?.focus(); }
+      else if (!e.shiftKey && act === last) { e.preventDefault(); first?.focus(); }
+    };
+    const node = modalRef.current;
+    node?.addEventListener('keydown', onKey);
+    return () => {
+      node?.removeEventListener('keydown', onKey);
+      prevFocusRef.current?.focus();
+    };
+  }, []);
 
   const handleVariantTypeChange = (t: string) => {
     setVariantType(t);
@@ -326,7 +366,7 @@ export default function ItemFormModal({
       className="fixed inset-0 bg-black/50 z-100 flex items-start justify-center py-8 px-4 overflow-y-auto"
       onClick={(e: MouseEvent<HTMLDivElement>) => { if (e.target === e.currentTarget) onClose(); }}
     >
-      <div className="card max-w-[680px] w-full bg-surface">
+      <div ref={modalRef} role="dialog" aria-modal="true" className="card max-w-[680px] w-full bg-surface">
         <div className="ch justify-between">
           <h3>{isEdit ? '✏️ Edit Menu Item' : '➕ Add Menu Item'}</h3>
           <button type="button" className="btn-g btn-sm" onClick={onClose} disabled={saving}>✕</button>

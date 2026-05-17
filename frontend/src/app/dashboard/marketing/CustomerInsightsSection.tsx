@@ -157,15 +157,18 @@ export default function CustomerInsightsSection() {
   const [period, setPeriod] = useState<string>('30d');
   const [loading, setLoading] = useState<boolean>(true);
   const [data, setData] = useState<CustomerData | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
+    setError(null);
     getCustomerGrowth(period)
       .then((resRaw) => {
         if (cancelled) return;
         const res = resRaw as CustomerGrowthResponse | null | undefined;
         if (!res || res.ok === false) {
+          setError("Couldn't load customer insights — check your connection and refresh.");
           setData(null);
         } else {
           setData(res.data || null);
@@ -174,6 +177,7 @@ export default function CustomerInsightsSection() {
       })
       .catch(() => {
         if (cancelled) return;
+        setError("Couldn't load customer insights — check your connection and refresh.");
         setData(null);
         setLoading(false);
       });
@@ -194,7 +198,13 @@ export default function CustomerInsightsSection() {
           </button>
         ))}
       </div>
-      <CustomerSection data={data ?? undefined} loading={loading} />
+      {error ? (
+        <div className="bg-red-100 border border-red-200 rounded-lg py-3 px-4 text-base text-red-800 mb-4">
+          {error}
+        </div>
+      ) : (
+        <CustomerSection data={data ?? undefined} loading={loading} />
+      )}
     </div>
   );
 }

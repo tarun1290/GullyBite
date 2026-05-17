@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, type MouseEvent } from 'react';
+import { useEffect, useRef, useState, type MouseEvent } from 'react';
 import { useToast } from '../../Toast';
 import {
   getProductSets,
@@ -61,6 +61,40 @@ export default function ProductSetsSection({ branches, selectedBranchId, setSele
   const [form, setForm] = useState<FormState>(emptyForm());
   const [saving, setSaving] = useState<boolean>(false);
   const [pendingDelete, setPendingDelete] = useState<string | null>(null);
+  const modalRef = useRef<HTMLDivElement | null>(null);
+  const prevFocusRef = useRef<HTMLElement | null>(null);
+
+  // Accessibility for the inline create/edit modal (rendered only while
+  // modalOpen). Mirrors CostConfirmCard's window keydown + focus-restore
+  // pattern, extended with a manual Tab trap. Gated on modalOpen so the
+  // listeners exist only while the dialog is on screen; Esc closes (never
+  // saves) and is intentionally excluded from the Tab wrap.
+  useEffect(() => {
+    if (!modalOpen) return;
+    const active = document.activeElement;
+    prevFocusRef.current = active instanceof HTMLElement ? active : null;
+    const SEL = 'button,input,select,textarea,[tabindex]:not([tabindex="-1"]),a[href]';
+    const focusables = (): HTMLElement[] =>
+      Array.from(modalRef.current?.querySelectorAll<HTMLElement>(SEL) || [])
+        .filter((el) => !el.hasAttribute('disabled'));
+    focusables()[0]?.focus();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') { setModalOpen(false); return; }
+      if (e.key !== 'Tab') return;
+      const els = focusables();
+      if (!els.length) return;
+      const first = els[0];
+      const last = els[els.length - 1];
+      const act = document.activeElement;
+      if (e.shiftKey && act === first) { e.preventDefault(); last?.focus(); }
+      else if (!e.shiftKey && act === last) { e.preventDefault(); first?.focus(); }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      prevFocusRef.current?.focus();
+    };
+  }, [modalOpen]);
 
   const isSpecific = Boolean(selectedBranchId) && !selectedBranchId.startsWith('__');
   const branch = isSpecific ? branches.find((b) => b.id === selectedBranchId) : null;
@@ -266,7 +300,7 @@ export default function ProductSetsSection({ branches, selectedBranchId, setSele
           className="fixed inset-0 bg-black/50 z-100 flex items-start justify-center py-8 px-4 overflow-y-auto"
           onClick={(e: MouseEvent<HTMLDivElement>) => { if (e.target === e.currentTarget) setModalOpen(false); }}
         >
-          <div className="card max-w-[480px] w-full bg-surface">
+          <div ref={modalRef} role="dialog" aria-modal="true" className="card max-w-[480px] w-full bg-surface">
             <div className="ch justify-between">
               <h3>{editingId ? '✏ Edit Product Set' : '+ Create Product Set'}</h3>
               <button type="button" className="btn-g btn-sm" onClick={() => setModalOpen(false)} disabled={saving}>✕</button>

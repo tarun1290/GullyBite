@@ -176,7 +176,7 @@ export default function FeedbackInsights() {
         if (cancelled) return;
         const res = resRaw as FeedbackInsightsResponse | null | undefined;
         if (!res || res.ok === false) {
-          setError('Could not load feedback insights. Try again.');
+          setError("Couldn't load feedback — check your connection and refresh.");
           setData(null);
         } else {
           setData(res.data || null);
@@ -185,7 +185,7 @@ export default function FeedbackInsights() {
       })
       .catch(() => {
         if (cancelled) return;
-        setError('Could not load feedback insights. Try again.');
+        setError("Couldn't load feedback — check your connection and refresh.");
         setData(null);
         setLoading(false);
       });
@@ -207,13 +207,13 @@ export default function FeedbackInsights() {
         ))}
       </div>
 
-      {error && (
+      {error ? (
         <div className="bg-red-100 border border-red-200 rounded-lg py-3 px-4 text-base text-red-800 mb-4">
           {error}
         </div>
+      ) : (
+        <FeedbackSection data={data ?? undefined} loading={loading} />
       )}
-
-      <FeedbackSection data={data ?? undefined} loading={loading} />
     </div>
   );
 }

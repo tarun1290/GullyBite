@@ -165,7 +165,8 @@ function CampaignSection({ data, loading }: CampaignSectionProps) {
               <div className="text-sm text-slate-500 mt-5 mb-2">
                 Top templates by ROI
               </div>
-              <table className="data-table w-full text-sm">
+              <div className="tbl">
+              <table className="w-full text-sm">
                 <thead>
                   <tr>
                     <th className="text-left">Template</th>
@@ -196,6 +197,7 @@ function CampaignSection({ data, loading }: CampaignSectionProps) {
                   ))}
                 </tbody>
               </table>
+              </div>
             </>
           )}
         </>
@@ -223,7 +225,8 @@ function JourneysSection({ data, loading }: JourneysSectionProps) {
             <StatCard label="Total sends" value={fmtNum(data.total_sends)} />
             <StatCard label="Journey types active" value={fmtNum((data.by_type || []).length)} />
           </StatGrid>
-          <table className="data-table w-full mt-4 text-sm">
+          <div className="tbl mt-4">
+          <table className="w-full text-sm">
             <thead>
               <tr>
                 <th className="text-left">Journey</th>
@@ -241,6 +244,7 @@ function JourneysSection({ data, loading }: JourneysSectionProps) {
               ))}
             </tbody>
           </table>
+          </div>
         </>
       )}
     </SectionCard>
@@ -278,15 +282,18 @@ export function CampaignAnalyticsStrip() {
   const [period, setPeriod] = useState<string>('30d');
   const [loading, setLoading] = useState<boolean>(true);
   const [data, setData] = useState<CampaignData | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
+    setError(null);
     getCampaignSummary(period)
       .then((raw) => {
         if (cancelled) return;
         const res = raw as SectionResponse<CampaignData> | null | undefined;
         if (!res || res.ok === false) {
+          setError("Couldn't load campaign performance — check your connection and refresh.");
           setData(null);
         } else {
           setData(res.data || null);
@@ -295,6 +302,7 @@ export function CampaignAnalyticsStrip() {
       })
       .catch(() => {
         if (cancelled) return;
+        setError("Couldn't load campaign performance — check your connection and refresh.");
         setData(null);
         setLoading(false);
       });
@@ -310,6 +318,11 @@ export function CampaignAnalyticsStrip() {
   return (
     <div className="mb-4">
       <PeriodChips period={period} onChange={setPeriod} />
+      {error ? (
+        <div className="bg-red-100 border border-red-200 rounded-lg py-3 px-4 text-base text-red-800 mb-4">
+          {error}
+        </div>
+      ) : (
       <div className="flex flex-col gap-4">
         <CampaignSection data={data || undefined} loading={loading} />
         {showSpend && (
@@ -324,6 +337,7 @@ export function CampaignAnalyticsStrip() {
           </StatGrid>
         )}
       </div>
+      )}
     </div>
   );
 }
@@ -334,15 +348,18 @@ export function JourneysAnalyticsStrip() {
   const [period, setPeriod] = useState<string>('30d');
   const [loading, setLoading] = useState<boolean>(true);
   const [data, setData] = useState<JourneysData | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
+    setError(null);
     getJourneySummary(period)
       .then((raw) => {
         if (cancelled) return;
         const res = raw as SectionResponse<JourneysData> | null | undefined;
         if (!res || res.ok === false) {
+          setError("Couldn't load auto journeys — check your connection and refresh.");
           setData(null);
         } else {
           setData(res.data || null);
@@ -351,6 +368,7 @@ export function JourneysAnalyticsStrip() {
       })
       .catch(() => {
         if (cancelled) return;
+        setError("Couldn't load auto journeys — check your connection and refresh.");
         setData(null);
         setLoading(false);
       });
@@ -360,7 +378,13 @@ export function JourneysAnalyticsStrip() {
   return (
     <div className="mb-4">
       <PeriodChips period={period} onChange={setPeriod} />
-      <JourneysSection data={data || undefined} loading={loading} />
+      {error ? (
+        <div className="bg-red-100 border border-red-200 rounded-lg py-3 px-4 text-base text-red-800 mb-4">
+          {error}
+        </div>
+      ) : (
+        <JourneysSection data={data || undefined} loading={loading} />
+      )}
     </div>
   );
 }

@@ -237,7 +237,7 @@ export default function AdminReferralsPage() {
           {
             label: 'Converted',
             data: daily.map((d) => d.converted),
-            borderColor: 'var(--gb-wa-500)',
+            borderColor: '#16a34a',
             backgroundColor: 'rgba(22,163,74,.12)',
             tension: 0.3,
             fill: true,

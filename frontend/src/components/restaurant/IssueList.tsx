@@ -51,8 +51,16 @@ function IssueRow({ issue, active, onSelect }: IssueRowProps) {
   const id = issue._id || issue.id || '';
   return (
     <div
+      role="button"
+      tabIndex={0}
       onClick={() => onSelect?.(id)}
-      className={`py-2.5 px-4 rounded-lg cursor-pointer border transition-all duration-150 ${
+      onKeyDown={(e: React.KeyboardEvent<HTMLDivElement>) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onSelect?.(id);
+        }
+      }}
+      className={`py-2.5 px-4 rounded-lg cursor-pointer border transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-acc ${
         active ? 'border-wa bg-[rgba(37,211,102,0.08)]' : 'border-transparent bg-transparent'
       }`}
     >

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useToast } from '../Toast';
 import {
   createUser,
@@ -234,6 +234,14 @@ export default function UserFormModal({ open, mode, onClose, onSaved, editing, b
   // result can fire onSaved + onClose in one place.
   const [deleteConfirming, setDeleteConfirming] = useState<boolean>(false);
   const [deleteBusy, setDeleteBusy] = useState<boolean>(false);
+  // a11y refs for the MAIN add/edit form modal only (not the PIN-reveal
+  // panel — that intentionally has no keyboard/click dismissal so the
+  // one-time PIN can't be lost to a stray Esc/click). modalRef scopes
+  // the manual Tab focus-trap to the form container; prevFocusRef
+  // captures the pre-open focus owner so it's restored on close.
+  // Mirrors BranchFormModal / CostConfirmCard's convention.
+  const modalRef = useRef<HTMLDivElement | null>(null);
+  const prevFocusRef = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
     if (!open) {
@@ -365,6 +373,73 @@ export default function UserFormModal({ open, mode, onClose, onSaved, editing, b
     });
     return () => { cancelled = true; };
   }, [created, branches]);
+
+  // ── MAIN add/edit form modal a11y ──────────────────────────────
+  // Scope guard: the PIN-reveal panel takes over rendering whenever
+  // `mode === 'staff-app' && generatedPin` (early return below). These
+  // effects must be inert in that case so the one-time PIN can't be
+  // dismissed by Esc, and so focus isn't yanked off the reveal panel.
+  const mainModalOpen = open && !(mode === 'staff-app' && generatedPin);
+
+  // Esc dismisses the MAIN form modal — never submits. Mirrors
+  // CostConfirmCard / BranchFormModal (window listener, e.key ===
+  // 'Escape', cleanup on unmount). Esc → onClose, never handleSave.
+  useEffect(() => {
+    if (!mainModalOpen) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [mainModalOpen, onClose]);
+
+  // Focus management: capture the pre-open focus owner, then park focus
+  // on the first focusable element inside the form container (the first
+  // input — Display Name in staff-app, Name in legacy — or Done on the
+  // success screen). Restore the prior focus owner on close so the
+  // operator returns to where they were. Mirrors BranchFormModal.
+  useEffect(() => {
+    if (!mainModalOpen) return;
+    const active = document.activeElement;
+    prevFocusRef.current = active instanceof HTMLElement ? active : null;
+    const first = modalRef.current?.querySelector<HTMLElement>(
+      'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+    );
+    first?.focus();
+    return () => {
+      const prev = prevFocusRef.current;
+      if (prev instanceof HTMLElement) prev.focus();
+    };
+  }, [mainModalOpen]);
+
+  // Manual Tab focus-trap on the MAIN modal container — first/last
+  // focusable cycle, no library (same approach as the sibling streams).
+  // Esc is handled separately above and must still escape, so this only
+  // intercepts Tab / Shift+Tab.
+  useEffect(() => {
+    if (!mainModalOpen) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== 'Tab') return;
+      const root = modalRef.current;
+      if (!root) return;
+      const focusable = root.querySelectorAll<HTMLElement>(
+        'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+      );
+      const firstEl = focusable[0];
+      const lastEl = focusable[focusable.length - 1];
+      if (!firstEl || !lastEl) return;
+      const activeEl = document.activeElement;
+      if (e.shiftKey) {
+        if (activeEl === firstEl || !root.contains(activeEl)) {
+          e.preventDefault();
+          lastEl.focus();
+        }
+      } else if (activeEl === lastEl || !root.contains(activeEl)) {
+        e.preventDefault();
+        firstEl.focus();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [mainModalOpen]);
 
   const copyLink = async (branchId: string, url: string) => {
     try {
@@ -752,7 +827,8 @@ export default function UserFormModal({ open, mode, onClose, onSaved, editing, b
 
   return (
     <div
-      className="fixed inset-0 bg-black/45 z-999 flex items-center justify-center p-4"
+      ref={modalRef}
+      className="fixed inset-0 bg-black/50 z-100 flex items-center justify-center p-4"
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
       {/* Success screen renders narrow content (PIN, link list); the
@@ -765,14 +841,7 @@ export default function UserFormModal({ open, mode, onClose, onSaved, editing, b
               ? 'Team member added!'
               : (isEdit ? 'Edit Team Member' : 'Add Team Member')}
           </h3>
-          <button
-            type="button"
-            onClick={onClose}
-            disabled={saving}
-            className="bg-none border-0 text-xl cursor-pointer"
-          >
-            ×
-          </button>
+          <button type="button" className="btn-g btn-sm" onClick={onClose} disabled={saving}>✕</button>
         </div>
         <div className="cb">
           {mode === 'staff-app' ? (

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, type MouseEvent } from 'react';
+import { useEffect, useRef, useState, type MouseEvent } from 'react';
 import { useToast } from '../../Toast';
 import { assignProductToBranch, getBranchSuggestions } from '../../../api/restaurant';
 import type { Branch, MenuItem } from '../../../types';
@@ -44,6 +44,50 @@ export default function BranchSuggestionsModal({ branches, menuItems, onClose, o
   const [selection, setSelection] = useState<Record<string, Set<string>>>({});
   const [applying, setApplying] = useState<boolean>(false);
   const [banner, setBanner] = useState<string>('Loading suggestions…');
+  // Per-row failures from the last apply attempt, keyed by product_id →
+  // list of branch ids that failed to assign. Populated on partial/total
+  // failure; the modal stays open so the operator can see what to retry.
+  const [rowErrors, setRowErrors] = useState<Record<string, string[]>>({});
+  const modalRef = useRef<HTMLDivElement | null>(null);
+  const prevFocusRef = useRef<HTMLElement | null>(null);
+
+  // Esc closes — never applies (mirrors CostConfirmCard's window keydown
+  // pattern: e.key === 'Escape', cleanup on unmount). Esc is intentionally
+  // left out of the Tab trap so it always escapes.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  // Focus management + manual Tab trap. Capture pre-mount focus owner,
+  // focus the first focusable element, restore on unmount; Tab/Shift+Tab
+  // wrap within the modal container.
+  useEffect(() => {
+    const active = document.activeElement;
+    prevFocusRef.current = active instanceof HTMLElement ? active : null;
+    const SEL = 'button,input,select,textarea,[tabindex]:not([tabindex="-1"]),a[href]';
+    const focusables = (): HTMLElement[] =>
+      Array.from(modalRef.current?.querySelectorAll<HTMLElement>(SEL) || [])
+        .filter((el) => !el.hasAttribute('disabled'));
+    focusables()[0]?.focus();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Tab') return;
+      const els = focusables();
+      if (!els.length) return;
+      const first = els[0];
+      const last = els[els.length - 1];
+      const act = document.activeElement;
+      if (e.shiftKey && act === first) { e.preventDefault(); last?.focus(); }
+      else if (!e.shiftKey && act === last) { e.preventDefault(); first?.focus(); }
+    };
+    const node = modalRef.current;
+    node?.addEventListener('keydown', onKey);
+    return () => {
+      node?.removeEventListener('keydown', onKey);
+      prevFocusRef.current?.focus();
+    };
+  }, []);
 
   useEffect(() => {
     (async () => {
@@ -95,7 +139,9 @@ export default function BranchSuggestionsModal({ branches, menuItems, onClose, o
 
   const apply = async () => {
     setApplying(true);
+    setRowErrors({});
     let ok = 0; let fail = 0;
+    const failed: Record<string, string[]> = {};
     for (const row of rows) {
       const picks = [...(selection[row.product_id] || [])];
       for (const bid of picks) {
@@ -105,12 +151,22 @@ export default function BranchSuggestionsModal({ branches, menuItems, onClose, o
           ok += 1;
         } catch {
           fail += 1;
+          (failed[row.product_id] ||= []).push(bid);
         }
       }
     }
     setApplying(false);
     showToast(`Applied ${ok} assignment${ok === 1 ? '' : 's'}${fail ? ` · ${fail} failed` : ''}`, fail ? 'error' : 'success');
+    // Refresh the parent regardless — some rows may have been assigned —
+    // but only auto-close on a clean run. On any failure keep the modal
+    // open and surface the failed rows inline so they can be retried.
     if (onApplied) onApplied();
+    if (fail > 0) {
+      setRowErrors(failed);
+      setBanner(`${fail} assignment${fail === 1 ? '' : 's'} failed${ok ? ` (${ok} succeeded)` : ''}. Review the highlighted products and retry.`);
+      return;
+    }
+    setRowErrors({});
     if (onClose) onClose();
   };
 
@@ -125,7 +181,7 @@ export default function BranchSuggestionsModal({ branches, menuItems, onClose, o
       className="fixed inset-0 bg-black/50 z-100 flex items-start justify-center py-8 px-4 overflow-y-auto"
       onClick={(e: MouseEvent<HTMLDivElement>) => { if (e.target === e.currentTarget) onClose(); }}
     >
-      <div className="card max-w-[680px] w-full bg-surface">
+      <div ref={modalRef} role="dialog" aria-modal="true" className="card max-w-[680px] w-full bg-surface">
         <div className="ch justify-between">
           <h3>🪄 Branch Suggestions</h3>
           <button type="button" className="btn-g btn-sm" onClick={onClose} disabled={applying}>✕</button>
@@ -138,12 +194,26 @@ export default function BranchSuggestionsModal({ branches, menuItems, onClose, o
             <div className="max-h-[400px] overflow-y-auto border border-rim rounded-lg">
               {rows.map((row) => {
                 const sel = selection[row.product_id] || new Set<string>();
+                const failedBids = rowErrors[row.product_id] || [];
+                const failedNames = failedBids
+                  .map((bid) => branchOpts.find((b) => b.id === bid)?.name || bid)
+                  .join(', ');
                 return (
-                  <div key={row.product_id} className="py-2.5 px-3 border-b border-slate-100">
+                  <div
+                    key={row.product_id}
+                    className={`py-2.5 px-3 border-b border-slate-100 ${
+                      failedBids.length ? 'bg-red-50 border-l-2 border-l-red-500' : ''
+                    }`}
+                  >
                     <div className="flex justify-between items-center mb-1.5">
                       <div className="font-semibold text-base">{row.name}</div>
                       <div className="text-xs text-dim">{REASON_LABEL[row.reason] || row.reason}</div>
                     </div>
+                    {failedBids.length > 0 && (
+                      <div className="text-xs text-red-600 mb-1.5">
+                        Failed to assign: {failedNames}. Adjust and retry.
+                      </div>
+                    )}
                     {/* Equal-width chip grid. minmax(110px, 1fr) keeps every
                         chip in a row at the same width while letting the
                         browser auto-pick column count by viewport width —
