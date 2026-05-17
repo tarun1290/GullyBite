@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState, type ChangeEvent, type FormEvent } from 'react';
 import StatCard from '../../../components/StatCard';
 import SectionError from '../../../components/restaurant/analytics/SectionError';
+import EmptyState from '../../../components/shared/EmptyState';
 import PendingApprovalNotice, { isPendingApproval } from '../../../components/restaurant/PendingApprovalNotice';
 import FeedbackInsights from './FeedbackInsights';
 import {
@@ -102,18 +103,21 @@ interface RatingsListResponse {
 type Window = '30d' | 'all';
 type MsgState = { kind: 'ok' | 'err'; text: string } | null;
 
-function ratingColor(v: number | undefined | null): string {
+// Maps a numeric rating to a Tailwind text-colour utility. The classes
+// resolve to the same tokens the old inline `var(--wa|--gold|--red|--dim)`
+// did (see global.css @theme), so the rendered colour is unchanged.
+function ratingColorClass(v: number | undefined | null): string {
   const n = Number(v) || 0;
-  if (n >= 4) return 'var(--wa)';
-  if (n >= 3) return 'var(--gold)';
-  if (n > 0) return 'var(--red)';
-  return 'var(--dim)';
+  if (n >= 4) return 'text-wa';
+  if (n >= 3) return 'text-gold';
+  if (n > 0) return 'text-red';
+  return 'text-dim';
 }
 
 function RatingBadge({ value }: { value?: number | undefined }) {
   return (
-    // colour from ratingColor() at runtime based on numeric rating
-    <span className="font-semibold" style={{ color: ratingColor(value) }}>
+    // colour from ratingColorClass() at runtime based on numeric rating
+    <span className={`font-semibold ${ratingColorClass(value)}`}>
       {value || '—'}
     </span>
   );
@@ -342,8 +346,8 @@ function RatingOverview({ stats, loading, err, onRetry, window, onWindowChange, 
                 key={i}
                 className="py-2 border-b border-rim"
               >
-                {/* colour from ratingColor() at runtime based on numeric rating */}
-                <span className="font-semibold" style={{ color: ratingColor(c.overall_rating || 0) }}>
+                {/* colour from ratingColorClass() at runtime based on numeric rating */}
+                <span className={`font-semibold ${ratingColorClass(c.overall_rating || 0)}`}>
                   {c.overall_rating || 0}⭐
                 </span>{' '}
                 <span>{c.comment || ''}</span>{' '}
@@ -353,7 +357,11 @@ function RatingOverview({ stats, loading, err, onRetry, window, onWindowChange, 
               </div>
             ))
           ) : (
-            <span className="text-mute">No comments yet</span>
+            <EmptyState
+              icon="💬"
+              title="No comments yet"
+              description="Customer comments will appear after they rate their orders"
+            />
           )}
         </div>
       </div>
@@ -370,7 +378,8 @@ function RatingOverview({ stats, loading, err, onRetry, window, onWindowChange, 
           <SectionError message={listErr} onRetry={onListRetry} />
         ) : (
           <div className="tbl">
-            <table>
+            <div className="overflow-x-auto w-full">
+            <table className="min-w-[700px]">
               <thead>
                 <tr>
                   <th>Order</th>
@@ -394,8 +403,12 @@ function RatingOverview({ stats, loading, err, onRetry, window, onWindowChange, 
                   </tr>
                 ) : !list?.ratings?.length ? (
                   <tr>
-                    <td colSpan={10} className="text-center p-8 text-dim">
-                      No ratings yet. Ratings will appear here after customers rate their orders.
+                    <td colSpan={10} className="p-0">
+                      <EmptyState
+                        icon="⭐"
+                        title="No ratings yet"
+                        description="Ratings appear after customers complete their first order"
+                      />
                     </td>
                   </tr>
                 ) : (
@@ -421,6 +434,7 @@ function RatingOverview({ stats, loading, err, onRetry, window, onWindowChange, 
                 )}
               </tbody>
             </table>
+            </div>
           </div>
         )}
 
@@ -477,9 +491,11 @@ function EscalationInbox({ escalations, loading, err, onRetry, includeResolved, 
         {loading ? (
           <div className="text-sm text-dim">Loading…</div>
         ) : rows.length === 0 ? (
-          <div className="text-sm text-dim">
-            No open escalations — nice work.
-          </div>
+          <EmptyState
+            icon="🛡️"
+            title="All clear"
+            description="No open escalations — nice work"
+          />
         ) : (
           <div className="flex flex-col gap-2">
             {rows.map((e) => (

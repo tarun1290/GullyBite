@@ -54,12 +54,24 @@ router.post('/', express.raw({ type: '*/*' }), async (req, res) => {
   res.sendStatus(200);
 
   try {
-    // Validate Meta webhook signature
+    // Validate Meta webhook signature — MANDATORY, fail closed.
+    // Absent header OR unconfigured secret must NEVER process a forgeable payload.
     const sig = req.headers['x-hub-signature-256']?.split('sha256=')[1];
-    if (sig && process.env.WEBHOOK_APP_SECRET) {
+    if (!sig) {
+      req.log.warn('Missing x-hub-signature-256 — dropping unsigned payload');
+      return;
+    }
+    if (!process.env.WEBHOOK_APP_SECRET) {
+      req.log.error('FATAL: WEBHOOK_APP_SECRET not configured — refusing to process unverifiable webhook (fail closed)');
+      return;
+    }
+    {
       const crypto = require('crypto');
       const expected = crypto.createHmac('sha256', process.env.WEBHOOK_APP_SECRET).update(req.body).digest('hex');
-      if (!crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(sig))) {
+      const expBuf = Buffer.from(expected);
+      const sigBuf = Buffer.from(sig);
+      // timingSafeEqual throws on unequal-length buffers — guard first
+      if (expBuf.length !== sigBuf.length || !crypto.timingSafeEqual(expBuf, sigBuf)) {
         req.log.warn('Invalid signature — dropping');
         return;
       }

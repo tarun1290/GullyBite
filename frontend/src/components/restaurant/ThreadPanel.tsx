@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
+import EmptyState from '../shared/EmptyState';
 import { getThread, replyToThread, resolveThread } from '../../api/restaurant';
 import { useToast } from '../Toast';
 import type { Thread } from './ConversationList';
@@ -181,9 +182,11 @@ export default function ThreadPanel({ customerId, conversation, onResolved, onTh
 
   if (!customerId) {
     return (
-      <div className="text-center text-dim py-12 text-base">
-        Select a conversation to view messages
-      </div>
+      <EmptyState
+        icon="💬"
+        title="No conversation selected"
+        description="Choose a conversation from the list to view messages"
+      />
     );
   }
 

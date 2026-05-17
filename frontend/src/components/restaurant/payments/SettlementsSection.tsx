@@ -332,12 +332,12 @@ export default function SettlementsSection() {
       <div className="card mb-5">
         <div className="ch">
           <h3>Settlements</h3>
-          <div className="flex gap-1.5 items-center flex-wrap">
+          <div className="flex flex-nowrap overflow-x-auto gap-2 pb-1 [-webkit-overflow-scrolling:touch] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden items-center">
             {SETTLE_PRESETS.map(([v, l]) => (
               <button
                 key={v}
                 type="button"
-                className={settlePreset === v ? 'chip on' : 'chip'}
+                className={settlePreset === v ? 'chip on flex-shrink-0' : 'chip flex-shrink-0'}
                 onClick={() => { setSettlePreset(v); setSettlePage(1); }}
               >
                 {l}
@@ -346,7 +346,7 @@ export default function SettlementsSection() {
             <button
               type="button"
               id="fin-settle-custom-btn"
-              className={settlePreset === 'custom' ? 'chip on' : 'chip'}
+              className={settlePreset === 'custom' ? 'chip on flex-shrink-0' : 'chip flex-shrink-0'}
               onClick={() => { setSettlePreset('custom'); setSettlePage(1); }}
             >
               Custom Range

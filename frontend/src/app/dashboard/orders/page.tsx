@@ -244,7 +244,7 @@ export default function OrdersPage() {
 
   return (
     <div id="tab-orders">
-      <div className="flex gap-2.5 items-center flex-wrap mb-2.5">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center mb-2.5">
         <label className="flex items-center gap-1.5 text-sm text-dim">
           From
           <input
@@ -273,7 +273,10 @@ export default function OrdersPage() {
           </button>
         )}
       </div>
-      <div className="chips mt-3" id="ochips">
+      <div
+        className="chips mt-3 flex flex-nowrap items-center overflow-x-auto gap-2 pb-1 mb-2.5 [-webkit-overflow-scrolling:touch] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+        id="ochips"
+      >
         {FILTER_CHIPS.map(([value, label]) => {
           const active = filter === value;
           const count = countMap[value] || 0;
@@ -281,7 +284,7 @@ export default function OrdersPage() {
             <button
               key={value}
               type="button"
-              className={active ? 'chip on' : 'chip'}
+              className={active ? 'chip on flex-shrink-0' : 'chip flex-shrink-0'}
               onClick={() => setFilter(value)}
             >
               {label}
@@ -303,7 +306,8 @@ export default function OrdersPage() {
       )}
       <div className="card">
         <div className="tbl">
-          <table>
+          <div className="overflow-x-auto w-full">
+          <table className="min-w-[800px]">
             <thead>
               <tr>
                 <th>Order</th>
@@ -346,6 +350,7 @@ export default function OrdersPage() {
               )}
             </tbody>
           </table>
+          </div>
         </div>
       </div>
 

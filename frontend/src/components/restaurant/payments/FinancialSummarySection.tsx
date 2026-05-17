@@ -277,12 +277,12 @@ export default function FinancialSummarySection() {
   return (
     <div>
       <div className="flex items-center justify-between flex-wrap gap-3 mb-4">
-        <div className="flex gap-1.5 flex-wrap">
+        <div className="flex flex-nowrap overflow-x-auto gap-2 pb-1 [-webkit-overflow-scrolling:touch] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           {PERIODS.map(([v, l]) => (
             <button
               key={v}
               type="button"
-              className={period === v ? 'fin-period-btn chip on' : 'fin-period-btn chip'}
+              className={period === v ? 'fin-period-btn chip on flex-shrink-0' : 'fin-period-btn chip flex-shrink-0'}
               onClick={() => { setPeriod(v); setCustomOpen(false); }}
             >
               {l}
@@ -291,7 +291,7 @@ export default function FinancialSummarySection() {
           <button
             type="button"
             id="fin-custom-btn"
-            className={period === 'custom' ? 'fin-period-btn chip on' : 'fin-period-btn chip'}
+            className={period === 'custom' ? 'fin-period-btn chip on flex-shrink-0' : 'fin-period-btn chip flex-shrink-0'}
             onClick={() => setCustomOpen((o) => !o)}
           >
             Custom Range

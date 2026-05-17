@@ -13,7 +13,7 @@ require('dotenv').config({ path: require('path').join(__dirname, '../.env'), qui
 // customerAuth.js also enforce their own secrets at require-time —
 // this block exists so ops sees ALL missing secrets in one boot log
 // instead of a series of one-at-a-time crash-loops.
-const REQUIRED_SECRETS = ['JWT_SECRET'];
+const REQUIRED_SECRETS = ['JWT_SECRET', 'CRON_SECRET'];
 const REQUIRED_IN_PROD = [
   'ADMIN_JWT_SECRET',
   'CUSTOMER_JWT_SECRET',

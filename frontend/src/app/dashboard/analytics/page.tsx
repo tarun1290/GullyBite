@@ -23,38 +23,44 @@ export default function AnalyticsPage() {
   const [dateRange, setDateRange] = useState<DateRange>({ preset: '7d' });
 
   return (
-    <div id="tab-analytics">
-      <div className="chips" id="an-period-chips">
-        {PRESETS.map(([value, label]) => (
-          <button
-            key={value}
-            type="button"
-            className={dateRange.preset === value ? 'chip on' : 'chip'}
-            onClick={() => setDateRange({ preset: value })}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
+    // pb-16 md:pb-0 is page-local: dashboard/layout.tsx has no global
+    // bottom padding, so content must clear the fixed mobile PwaInstallBanner.
+    <div id="tab-analytics" className="pb-16 md:pb-0">
+      {/* Single flex column owns all vertical rhythm: every top-level
+          section is spaced by one gap-6 step. Per-section mb-* and
+          standalone spacer divs were removed so the gap is uniform. */}
+      <div className="flex flex-col gap-6">
+        <div className="chips" id="an-period-chips">
+          {PRESETS.map(([value, label]) => (
+            <button
+              key={value}
+              type="button"
+              className={dateRange.preset === value ? 'chip on' : 'chip'}
+              onClick={() => setDateRange({ preset: value })}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
 
-      <RevenueSection dateRange={dateRange} />
+        <RevenueSection dateRange={dateRange} />
 
-      <div className="grid grid-cols-2 gap-4 mb-4">
-        <TopItemsSection dateRange={dateRange} />
-        <div className="flex flex-col gap-4">
+        {/* Shared grid parent: TopItems + PeakHoursSection's two cards are
+            direct grid children so the day-of-week card can break out
+            full-width (col-span-full) on its own row below the grid. */}
+        <div className="grid grid-cols-2 gap-4">
+          <TopItemsSection dateRange={dateRange} />
           <PeakHoursSection dateRange={dateRange} />
         </div>
+
+        <CustomersSection dateRange={dateRange} />
+
+        <DeliverySection dateRange={dateRange} />
+
+        <DropoffsSection dateRange={dateRange} />
+
+        <RecoverySection dateRange={dateRange} />
       </div>
-
-      <CustomersSection dateRange={dateRange} />
-
-      <div className="h-4" />
-
-      <DeliverySection dateRange={dateRange} />
-
-      <DropoffsSection dateRange={dateRange} />
-
-      <RecoverySection dateRange={dateRange} />
     </div>
   );
 }

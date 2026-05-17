@@ -9,6 +9,7 @@
 
 import { useEffect, useState, type ReactNode } from 'react';
 import Card from '../../../components/Card';
+import EmptyState from '../../../components/shared/EmptyState';
 import StatCard from '../../../components/StatCard';
 import { getCampaignSummary, getJourneySummary } from '../../../api/restaurant';
 
@@ -41,7 +42,7 @@ interface SectionCardProps {
   title: string;
   subtitle?: string;
   children?: ReactNode;
-  empty?: string | null;
+  empty?: ReactNode;
   loading?: boolean;
 }
 
@@ -143,7 +144,15 @@ function CampaignSection({ data, loading }: CampaignSectionProps) {
       title="Campaign Performance"
       subtitle="Manual marketing blasts — sent, delivered, converted, ROI."
       loading={loading}
-      empty={empty ? 'No campaigns sent in this period.' : null}
+      empty={
+        empty ? (
+          <EmptyState
+            icon="📣"
+            title="No campaigns this period"
+            description="Manual blasts will appear here once sent"
+          />
+        ) : null
+      }
     >
       {data && data.totals && (
         <>
@@ -326,15 +335,28 @@ export function CampaignAnalyticsStrip() {
       <div className="flex flex-col gap-4">
         <CampaignSection data={data || undefined} loading={loading} />
         {showSpend && (
-          <StatGrid cols={3}>
-            <StatCard label="Marketing spend" value={fmtRs(spend)} />
-            <StatCard label="Campaign revenue" value={fmtRs(revenue)} />
-            <StatCard
-              label="Net contribution"
-              value={fmtRs(net)}
-              deltaType={net >= 0 ? 'up' : 'down'}
-            />
-          </StatGrid>
+          // Mobile: this 3-card spend row is a horizontal scroller. Scoped
+          // to THIS call site only — the local StatGrid (used by the 4-col
+          // Campaign + 2-col Journeys grids) is intentionally left untouched
+          // so those don't regress. The shared StatCard takes no className,
+          // so per-card sizing is applied via local flex-item wrappers
+          // (no shared-component API change). Scrollbar hidden via Tailwind
+          // v4 arbitrary variants — no project scrollbar-hide utility exists.
+          <div className="flex flex-nowrap overflow-x-auto gap-3 [-webkit-overflow-scrolling:touch] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            <div className="flex-shrink-0 min-w-[140px]">
+              <StatCard label="Marketing spend" value={fmtRs(spend)} />
+            </div>
+            <div className="flex-shrink-0 min-w-[140px]">
+              <StatCard label="Campaign revenue" value={fmtRs(revenue)} />
+            </div>
+            <div className="flex-shrink-0 min-w-[140px]">
+              <StatCard
+                label="Net contribution"
+                value={fmtRs(net)}
+                deltaType={net >= 0 ? 'up' : 'down'}
+              />
+            </div>
+          </div>
         )}
       </div>
       )}

@@ -163,6 +163,15 @@ router.post('/branches/:branchId/sync', requireAdmin, async (req, res) => {
 // SECTION B: STORE STATUS (NO AUTH — called by Petpooja)
 // ═══════════════════════════════════════════════════════════
 
+// Petpooja's servers call these endpoints server-to-server to read
+// or write the per-branch is_open flag (their UI toggle propagates
+// into our customer order routing). They cannot present a GullyBite
+// JWT, so there is no requireAuth. Minimum guard: the incoming restID
+// must resolve to a linked, active Petpooja integration via
+// _resolveStore (restaurant_integrations.outlet_id — there is no
+// branches.petpooja_outlet_id field) before any branch mutation, so a
+// spoofed/random outlet id is rejected immediately.
+
 // Resolve the (integration, branch) pair from Petpooja's restID. Returns
 // { integration, branch } or null when either lookup misses; callers
 // translate null into the Petpooja-shaped error response.
@@ -184,7 +193,15 @@ async function _resolveStore(restID) {
 // matches Petpooja's documented contract exactly: '1' = open, '0' = closed.
 router.get('/store-status', express.json(), async (req, res) => {
   try {
+    console.log('[petpooja-debug] headers:', JSON.stringify(req.headers)); // TODO: remove after confirming PetPooja auth headers
     const restID = req.body?.restID || req.query?.restID;
+    // Minimum guard: reject a spoofed/random outlet id before any
+    // processing. _resolveStore validates restID against the real
+    // restaurant_integrations.outlet_id linkage (there is no
+    // branches.petpooja_outlet_id field) and returns null on no match.
+    if (!restID) {
+      return res.json({ code: '400', status: 'failed', message: 'Store not found' });
+    }
     const found = await _resolveStore(restID);
     if (!found) {
       return res.json({ code: '400', status: 'failed', message: 'Store not found' });
@@ -207,7 +224,15 @@ router.get('/store-status', express.json(), async (req, res) => {
 // reads to decide if a branch can take orders.
 router.post('/store-status', express.json(), async (req, res) => {
   try {
+    console.log('[petpooja-debug] headers:', JSON.stringify(req.headers)); // TODO: remove after confirming PetPooja auth headers
     const { restID, store_status, reason, turn_on_time } = req.body || {};
+    // Minimum guard: reject a spoofed/random outlet id BEFORE the
+    // branch mutation below. _resolveStore checks the real
+    // restaurant_integrations.outlet_id linkage (no
+    // branches.petpooja_outlet_id field exists).
+    if (!restID) {
+      return res.json({ code: '400', status: 'failed', message: 'Store not found' });
+    }
     const found = await _resolveStore(restID);
     if (!found) {
       return res.json({ code: '400', status: 'failed', message: 'Store not found' });

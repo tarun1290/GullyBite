@@ -195,7 +195,17 @@ router.get('/meta-config', (req, res) => {
 });
 
 // ─── SIGN UP ──────────────────────────────────────────────────
-router.post('/signup', express.json(), async (req, res) => {
+const signupLimiter = rateLimitFn(
+  (req) => {
+    const ip = req.ip || req.headers['x-forwarded-for'] || 'unknown';
+    return `signup:${ip}`;
+  },
+  5,
+  60 * 60,
+  { message: 'Too many signup attempts, try again later' }
+);
+
+router.post('/signup', express.json(), signupLimiter, async (req, res) => {
   try {
     const { ownerName, email, password } = req.body;
     if (!ownerName || !email || !password)
@@ -276,7 +286,17 @@ router.post('/signup', express.json(), async (req, res) => {
 });
 
 // ─── SIGN IN ──────────────────────────────────────────────────
-router.post('/signin', express.json(), async (req, res) => {
+const signinLimiter = rateLimitFn(
+  (req) => {
+    const ip = req.ip || req.headers['x-forwarded-for'] || 'unknown';
+    return `signin:${ip}`;
+  },
+  10,
+  15 * 60,
+  { message: 'Too many login attempts, try again later' }
+);
+
+router.post('/signin', express.json(), signinLimiter, async (req, res) => {
   try {
     const { email, password } = req.body;
     if (!email || !password)
@@ -314,7 +334,17 @@ router.post('/signin', express.json(), async (req, res) => {
 });
 
 // ─── GOOGLE SIGN IN ──────────────────────────────────────────
-router.post('/google', express.json(), async (req, res) => {
+const googleOauthLimiter = rateLimitFn(
+  (req) => {
+    const ip = req.ip || req.headers['x-forwarded-for'] || 'unknown';
+    return `google-oauth:${ip}`;
+  },
+  20,
+  10 * 60,
+  { message: 'Too many attempts, try again later' }
+);
+
+router.post('/google', express.json(), googleOauthLimiter, async (req, res) => {
   try {
     const { code } = req.body;
     req.log.info({ codePresent: !!code }, 'Route hit');
@@ -407,7 +437,17 @@ router.post('/google', express.json(), async (req, res) => {
 // dashboard with a fixed demo credential without exposing the regular
 // /signin or /google flows to that credential. See
 // backend/scripts/set-demo-login.js for the one-time setup.
-router.post('/manual-login', express.json(), async (req, res) => {
+const manualLoginLimiter = rateLimitFn(
+  (req) => {
+    const ip = req.ip || req.headers['x-forwarded-for'] || 'unknown';
+    return `manual-login:${ip}`;
+  },
+  10,
+  15 * 60,
+  { message: 'Too many login attempts, try again later' }
+);
+
+router.post('/manual-login', express.json(), manualLoginLimiter, async (req, res) => {
   try {
     const { email, password } = req.body || {};
     if (!email || !password) {

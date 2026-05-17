@@ -86,15 +86,30 @@ export default function CustomersSection({ dateRange }: CustomersSectionProps) {
                   <ChartCanvas type="doughnut" data={donutConfig.data} options={donutConfig.options} height={160} />
                 )}
               </div>
-              <div id="an-cust-stats" className="text-sm text-dim leading-[1.8]">
+              <div
+                id="an-cust-stats"
+                className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-4 flex-1"
+              >
                 {loading && !data ? (
-                  <div>Loading…</div>
+                  <div className="text-sm text-dim">Loading…</div>
                 ) : data ? (
                   <>
-                    <div><strong>{data.new_customers ?? 0}</strong> new customers</div>
-                    <div><strong>{data.returning_customers ?? 0}</strong> returning</div>
-                    <div>Repeat rate: <strong>{data.repeat_rate_pct ?? 0}%</strong></div>
-                    <div>Avg orders/customer: <strong>{data.avg_orders_per_customer ?? 0}</strong></div>
+                    <div>
+                      <div className="text-xs text-dim uppercase tracking-wide">New Customers</div>
+                      <div className="text-lg font-semibold text-tx">{data.new_customers ?? 0}</div>
+                    </div>
+                    <div>
+                      <div className="text-xs text-dim uppercase tracking-wide">Returning</div>
+                      <div className="text-lg font-semibold text-tx">{data.returning_customers ?? 0}</div>
+                    </div>
+                    <div>
+                      <div className="text-xs text-dim uppercase tracking-wide">Repeat Rate</div>
+                      <div className="text-lg font-semibold text-tx">{data.repeat_rate_pct ?? 0}%</div>
+                    </div>
+                    <div>
+                      <div className="text-xs text-dim uppercase tracking-wide">Avg Orders</div>
+                      <div className="text-lg font-semibold text-tx">{data.avg_orders_per_customer ?? 0}</div>
+                    </div>
                   </>
                 ) : null}
               </div>

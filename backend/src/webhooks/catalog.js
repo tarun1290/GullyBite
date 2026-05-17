@@ -29,14 +29,25 @@ router.post('/', express.raw({ type: '*/*' }), async (req, res) => {
   res.sendStatus(200);
 
   try {
-    // Verify HMAC-SHA256 signature using App Secret
-    const sig      = req.headers['x-hub-signature-256']?.split('sha256=')[1];
+    // Verify HMAC-SHA256 signature using App Secret — MANDATORY, fail closed.
+    // Absent header OR unconfigured secret must NEVER process a forgeable payload.
+    const sig = req.headers['x-hub-signature-256']?.split('sha256=')[1];
+    if (!sig) {
+      req.log.warn('Missing x-hub-signature-256 — ignoring unsigned payload');
+      return;
+    }
+    if (!process.env.META_APP_SECRET) {
+      req.log.error('FATAL: META_APP_SECRET not configured — refusing to process unverifiable webhook (fail closed)');
+      return;
+    }
     const expected = crypto
       .createHmac('sha256', process.env.META_APP_SECRET)
       .update(req.body)
       .digest('hex');
-
-    if (!sig || !crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(sig))) {
+    const expBuf = Buffer.from(expected);
+    const sigBuf = Buffer.from(sig);
+    // timingSafeEqual throws on unequal-length buffers — guard first
+    if (expBuf.length !== sigBuf.length || !crypto.timingSafeEqual(expBuf, sigBuf)) {
       req.log.warn('Invalid signature — ignoring');
       return;
     }

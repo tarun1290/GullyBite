@@ -61,12 +61,12 @@ function SettingsPageInner() {
 
   return (
     <div>
-      <div className="flex gap-2 flex-wrap pb-4 mb-4 border-b border-rim">
+      <div className="flex flex-nowrap overflow-x-auto gap-2 pb-1 mb-4 border-b border-rim [-webkit-overflow-scrolling:touch] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {SECTIONS.map(([v, l]) => (
           <button
             key={v}
             type="button"
-            className={activeSection === v ? 'chip on' : 'chip'}
+            className={`flex-shrink-0 ${activeSection === v ? 'chip on' : 'chip'}`}
             onClick={() => setActiveSection(v)}
           >
             {l}

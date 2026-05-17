@@ -54,10 +54,14 @@ export async function generateMetadata(
   }
 }
 
-const TYPE_BADGE: Record<NonNullable<StoreData['restaurant_type']>, { bg: string; fg: string; label: string }> = {
-  veg:     { bg: '#dcfce7', fg: '#15803d', label: 'Pure Veg' },
-  non_veg: { bg: '#fee2e2', fg: '#b91c1c', label: 'Non-Veg' },
-  both:    { bg: '#e0e7ff', fg: '#4338ca', label: 'Veg & Non-Veg' },
+// Tailwind v4 — no dynamic class strings. Each restaurant_type maps to a
+// literal arbitrary-value class pair (same hexes as the old inline bg/fg)
+// so the JIT can see them. These are status greens/red/indigo — not the
+// landing brand yellow/red.
+const TYPE_BADGE: Record<NonNullable<StoreData['restaurant_type']>, { cls: string; label: string }> = {
+  veg:     { cls: 'bg-[#dcfce7] text-[#15803d]', label: 'Pure Veg' },
+  non_veg: { cls: 'bg-[#fee2e2] text-[#b91c1c]', label: 'Non-Veg' },
+  both:    { cls: 'bg-[#e0e7ff] text-[#4338ca]', label: 'Veg & Non-Veg' },
 };
 
 function waOrderHref(phone: string): string {
@@ -77,7 +81,7 @@ export default async function StorePage(
   const phone = r.phone || '';
 
   return (
-    <main className="min-h-screen bg-[#f8fafc] flex items-center justify-center py-8 px-4 font-[system-ui,-apple-system,sans-serif] text-slate-900">
+    <main className="min-h-screen bg-gradient-to-br from-gray-50 to-teal-50/30 flex flex-col items-center justify-center py-8 px-4 font-[system-ui,-apple-system,sans-serif] text-slate-900">
       <div className="bg-white rounded-2xl py-10 px-8 text-center max-w-[420px] w-full shadow-[0_4px_24px_rgba(0,0,0,0.08)]">
         {r.logo_url ? (
           <div className="flex justify-center mb-4">
@@ -93,7 +97,7 @@ export default async function StorePage(
         ) : (
           <div
             aria-hidden="true"
-            className="w-[88px] h-[88px] rounded-2xl bg-slate-100 flex items-center justify-center text-[2.4rem] mx-auto mb-4"
+            className="w-[88px] h-[88px] rounded-2xl bg-gray-100 flex items-center justify-center text-[2.4rem] mx-auto mb-4"
           >
             🍽️
           </div>
@@ -110,10 +114,9 @@ export default async function StorePage(
         )}
 
         <span
-          className="inline-block py-1 px-3 rounded-full text-xs font-semibold mb-6"
-          // bg / fg from TYPE_BADGE by restaurant_type at runtime
+          // colour class from TYPE_BADGE by restaurant_type at runtime
           // (veg/non_veg/both — 3 distinct hex pairs).
-          style={{ background: badge.bg, color: badge.fg }}
+          className={`inline-block py-1 px-3 rounded-full text-xs font-semibold mb-6 ${badge.cls}`}
         >
           {badge.label}
         </span>
@@ -148,6 +151,10 @@ export default async function StorePage(
           Powered by GullyBite
         </p>
       </div>
+
+      <p className="text-xs text-dim text-center mt-6">
+        Powered by GullyBite
+      </p>
     </main>
   );
 }

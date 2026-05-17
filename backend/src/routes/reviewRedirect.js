@@ -16,9 +16,17 @@
 
 const express = require('express');
 const { col } = require('../config/database');
+const { rateLimitFn } = require('../middleware/rateLimit');
 const log = require('../utils/logger').child({ component: 'review-redirect' });
 
 const router = express.Router();
+
+// Public, unauthenticated 302 redirect — IP-throttle to blunt redirect /
+// click-stamp abuse. 30 req / 60s per IP, Redis-backed (shared client).
+const reviewLimiter = rateLimitFn((req) => {
+  const ip = req.ip || req.headers['x-forwarded-for'] || 'unknown';
+  return `review:${ip}`;
+}, 30, 60, { message: 'Too many requests, slow down' });
 
 function fallbackUrl() {
   const base = (process.env.BASE_URL || '').replace(/\/+$/, '');
@@ -42,6 +50,9 @@ async function resolve(req, res, field) {
       { $set: { review_link_clicked: true, updated_at: new Date() } }
     ).catch((err) => log.warn({ err, id }, 'review click stamp failed'));
 
+    // `target` is a stored, operator-editable URL — refuse to reflect a
+    // non-http(s) scheme (javascript:, data:, etc.) into a 302.
+    if (!/^https?:\/\//i.test(target)) return res.status(400).end();
     return res.redirect(302, target);
   } catch (err) {
     log.error({ err, id }, 'review redirect failed');
@@ -49,7 +60,7 @@ async function resolve(req, res, field) {
   }
 }
 
-router.get('/:id', (req, res) => resolve(req, res, 'google_review_link'));
-router.get('/:id/zomato', (req, res) => resolve(req, res, 'zomato_review_link'));
+router.get('/:id', reviewLimiter, (req, res) => resolve(req, res, 'google_review_link'));
+router.get('/:id/zomato', reviewLimiter, (req, res) => resolve(req, res, 'zomato_review_link'));
 
 module.exports = router;

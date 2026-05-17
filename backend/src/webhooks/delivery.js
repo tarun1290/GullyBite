@@ -3,6 +3,7 @@
 // Always returns 200 immediately, then processes asynchronously.
 
 const express = require('express');
+const crypto = require('crypto');
 const router = express.Router();
 const { col, newId, connect } = require('../config/database');
 const { isWithinCSW } = require('../utils/csw');
@@ -29,8 +30,17 @@ router.post('/', express.json(), async (req, res) => {
       req.log.error('DELIVERY_WEBHOOK_SECRET not configured — dropping webhook');
       return;
     }
-    const authHeader = req.headers['x-webhook-secret'] || req.headers['authorization'] || req.query?.secret;
-    if (authHeader !== secret && authHeader !== `Bearer ${secret}`) {
+    // Header-only — never read the secret from the query string (it would
+    // leak into proxy/CDN/access logs). Both header forms providers may
+    // already use are still honored.
+    const authHeader = req.headers['x-webhook-secret'] || req.headers['authorization'] || '';
+    // Normalize: accept either the raw secret or `Bearer <secret>`.
+    const provided = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : authHeader;
+    // Constant-time compare. timingSafeEqual throws on length mismatch, so
+    // length-check first (a mismatched length is itself an invalid secret).
+    const ok = Buffer.byteLength(provided) === Buffer.byteLength(secret)
+      && crypto.timingSafeEqual(Buffer.from(provided), Buffer.from(secret));
+    if (!ok) {
       req.log.warn('Invalid webhook secret — dropping');
       return;
     }

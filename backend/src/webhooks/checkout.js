@@ -31,13 +31,48 @@ router.get('/', (req, res) => {
 // ─── INCOMING CHECKOUT EVENTS ───────────────────────────────────
 router.post('/', express.raw({ type: '*/*' }), async (req, res) => {
   try {
-    // Verify signature if configured
+    // ─── MANDATORY SIGNATURE VERIFICATION (fail-closed) ──────────
+    // Both the x-hub-signature-256 header AND the webhook secret are
+    // REQUIRED. We NEVER parse or process an unsigned/unverifiable
+    // payload — a spoofed "paid" checkout event must not be able to
+    // mint fake paid orders or ledger credits. Order is strict:
+    // header present → secret configured → signature valid → only
+    // then JSON.parse + process. Each failure path returns exactly
+    // one response and stops.
     const sig = req.headers['x-hub-signature-256']?.replace('sha256=', '');
-    if (process.env.WA_CHECKOUT_WEBHOOK_SECRET && sig) {
-      if (!verifyCheckoutSignature(req.body, sig)) {
-        req.log.error('Invalid signature');
-        return res.sendStatus(401);
-      }
+
+    // 1. No signature header → reject before any parsing.
+    if (!sig) {
+      req.log.warn('Rejected checkout webhook: missing x-hub-signature-256 header');
+      return res.sendStatus(401);
+    }
+
+    // 2. Secret not configured → server misconfiguration. Fail closed
+    //    (500) rather than silently accepting unverifiable webhooks.
+    if (!process.env.WA_CHECKOUT_WEBHOOK_SECRET) {
+      req.log.error('FATAL: WA_CHECKOUT_WEBHOOK_SECRET not configured — rejecting checkout webhook');
+      return res.sendStatus(500);
+    }
+
+    // 3. Verify the HMAC-SHA256 signature over the raw body.
+    //    verifyCheckoutSignature (services/checkout-crypto.js) already
+    //    uses crypto.timingSafeEqual internally, so the comparison is
+    //    constant-time — we do NOT duplicate that here. timingSafeEqual
+    //    throws a RangeError when the two buffers differ in length
+    //    (an attacker-supplied signature can be any length), so the
+    //    call is wrapped: any throw is treated as a verification
+    //    failure (fail closed), never a fall-through to processing.
+    let sigValid = false;
+    try {
+      sigValid = verifyCheckoutSignature(req.body, sig);
+    } catch (verifyErr) {
+      req.log.warn({ err: verifyErr }, 'Checkout signature verification errored — treating as invalid');
+      sigValid = false;
+    }
+    // 4. Signature mismatch → reject. Never process.
+    if (!sigValid) {
+      req.log.error('Invalid signature');
+      return res.sendStatus(401);
     }
 
     const event = JSON.parse(req.body);

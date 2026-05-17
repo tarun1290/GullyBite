@@ -17,7 +17,7 @@ router.post('/presign', async (req, res) => {
       return res.status(503).json({ error: 'Image uploads are not configured. Set AWS environment variables to enable.' });
     }
 
-    const { filename, contentType, restaurantId, folder } = req.body;
+    const { filename, contentType, folder } = req.body;
 
     if (!filename || !contentType) {
       return res.status(400).json({ error: 'filename and contentType are required' });
@@ -26,8 +26,11 @@ router.post('/presign', async (req, res) => {
       return res.status(400).json({ error: 'contentType must be an image type (e.g. image/jpeg, image/png)' });
     }
 
-    // Use the authenticated restaurant's ID, or the provided one if admin
-    const restId = restaurantId || req.restaurantId;
+    // Always the authenticated restaurant — never client-supplied (cross-tenant IDOR)
+    const restId = req.restaurantId;
+    if (!restId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
 
     const result = await generatePresignedUploadUrl(restId, filename, contentType, folder);
 

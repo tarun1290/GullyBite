@@ -98,16 +98,28 @@ async function createProduct(input) {
 // create/update the branch_products override row. Idempotent: re-calling
 // with the same (product_id, branch_id) upserts the override and does
 // not duplicate the branch in branch_ids.
-async function assignProductToBranch({ product_id, branch_id, price, tax_percentage, availability = true }) {
+async function assignProductToBranch({ product_id, branch_id, restaurant_id, price, tax_percentage, availability = true }) {
   if (!product_id || !branch_id) {
     throw Object.assign(new Error('product_id and branch_id required'), { statusCode: 400 });
   }
+  if (!restaurant_id) throw Object.assign(new Error('restaurant_id required'), { statusCode: 400 });
+  // Tenant scoping: only match the product/branch within the caller's
+  // restaurant. A miss is reported as 404 (this file's not-found
+  // convention) so a cross-tenant probe cannot distinguish "exists under
+  // another tenant" from "does not exist".
   const [product, branch] = await Promise.all([
-    col('menu_items').findOne({ _id: String(product_id) }),
+    col('menu_items').findOne({ _id: String(product_id), restaurant_id: String(restaurant_id) }),
     branchSvc.getBranch(branch_id),
   ]);
   if (!product) throw Object.assign(new Error('product not found'), { statusCode: 404 });
   if (!branch)  throw Object.assign(new Error('branch not found'),  { statusCode: 404 });
+  // Branch ownership: getBranch returns the full branch doc (carries
+  // restaurant_id, stored as String(...) in branch.service.js). Reject
+  // assigning to a branch owned by a different tenant — surfaced as the
+  // same 404 'branch not found' to avoid cross-tenant info leak.
+  if (String(branch.restaurant_id) !== String(restaurant_id)) {
+    throw Object.assign(new Error('branch not found'), { statusCode: 404 });
+  }
 
   const now = new Date();
   const priceP = price != null ? Math.round(Number(price) * 100) : (product.price_paise || 0);
@@ -140,7 +152,7 @@ async function assignProductToBranch({ product_id, branch_id, price, tax_percent
     setOps.branch_id = String(branch_id);
   }
   const updated = await col('menu_items').findOneAndUpdate(
-    { _id: String(product_id) },
+    { _id: String(product_id), restaurant_id: String(restaurant_id) },
     {
       $addToSet: { branch_ids: String(branch_id) },
       $set: setOps,
@@ -166,9 +178,13 @@ async function assignProductToBranch({ product_id, branch_id, price, tax_percent
 // branch_id per the invariant above. Two round-trips when reconciliation
 // is needed (rare path, unassign is uncommon) — keeping consistency
 // strictly correct beats saving a millisecond here.
-async function unassignFromBranch({ product_id, branch_id }) {
+async function unassignFromBranch({ product_id, branch_id, restaurant_id }) {
+  if (!restaurant_id) throw Object.assign(new Error('restaurant_id required'), { statusCode: 400 });
+  // Tenant scoping: only mutate a product owned by the caller's
+  // restaurant. A non-match yields the same 404 'product not found' as a
+  // genuinely missing product — no cross-tenant existence leak.
   const res = await col('menu_items').findOneAndUpdate(
-    { _id: String(product_id) },
+    { _id: String(product_id), restaurant_id: String(restaurant_id) },
     { $pull: { branch_ids: String(branch_id) }, $set: { updated_at: new Date() } },
     { returnDocument: 'after' }
   );
@@ -192,7 +208,7 @@ async function unassignFromBranch({ product_id, branch_id }) {
   }
   if (reconcile) {
     await col('menu_items').updateOne(
-      { _id: String(product_id) },
+      { _id: String(product_id), restaurant_id: String(restaurant_id) },
       { $set: reconcile }
     );
     Object.assign(doc, reconcile);

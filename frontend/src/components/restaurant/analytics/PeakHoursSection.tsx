@@ -3,6 +3,7 @@
 import { useCallback, useMemo } from 'react';
 import type { ChartData, ChartOptions } from 'chart.js';
 import ChartCanvas from '../../shared/ChartCanvas';
+import EmptyState from '../../shared/EmptyState';
 import SectionError from './SectionError';
 import useAnalyticsFetch from './useAnalyticsFetch';
 import { getPeakHours } from '../../../api/restaurant';
@@ -112,23 +113,34 @@ export default function PeakHoursSection({ dateRange }: PeakHoursSectionProps) {
             <SectionError message={error} onRetry={refetch} />
           ) : hoursConfig ? (
             <ChartCanvas type="bar" data={hoursConfig.data} options={hoursConfig.options} height={300} />
+          ) : loading ? (
+            <div className="text-center text-dim py-12 text-base">Loading…</div>
           ) : (
-            <div className="text-center text-dim py-12 text-base">
-              {loading ? 'Loading…' : 'No orders in this period'}
-            </div>
+            <EmptyState
+              icon="🕐"
+              title="No order patterns yet"
+              description="Peak hours appear after your first orders"
+            />
           )}
         </div>
       </div>
 
-      <div className="card m-0">
+      {/* col-span-full: when rendered inside the analytics page's
+          grid-cols-2 parent, this card breaks out to span the full
+          grid width on its own row below the 2-col layout. */}
+      <div className="card m-0 col-span-full">
         <div className="ch"><h3>Orders by Day of Week</h3></div>
         <div className="cb h-[250px] relative">
           {error ? null : daysConfig ? (
             <ChartCanvas type="bar" data={daysConfig.data} options={daysConfig.options} height={250} />
+          ) : loading ? (
+            <div className="text-center text-dim py-12 text-base">Loading…</div>
           ) : (
-            <div className="text-center text-dim py-12 text-base">
-              {loading ? 'Loading…' : 'No orders in this period'}
-            </div>
+            <EmptyState
+              icon="📅"
+              title="No data yet"
+              description="Order distribution by day will appear here"
+            />
           )}
         </div>
       </div>

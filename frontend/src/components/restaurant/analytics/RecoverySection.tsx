@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback } from 'react';
+import EmptyState from '../../shared/EmptyState';
 import SectionError from './SectionError';
 import useAnalyticsFetch from './useAnalyticsFetch';
 import { getRecoveryStats, getCartRecovery } from '../../../api/restaurant';
@@ -67,9 +68,11 @@ function RecoveryStatsBlock({ stats, loading, error, onRetry }: RecoveryStatsBlo
   }
   if (!stats || !stats.total_sent) {
     return (
-      <span className="text-dim">
-        No recovery messages sent yet. Use the &quot;Send Recovery&quot; button above to win back abandoned carts.
-      </span>
+      <EmptyState
+        icon="🛒"
+        title="No abandoned carts recovered"
+        description="Use Send Recovery on incomplete orders above to start winning them back"
+      />
     );
   }
   return (

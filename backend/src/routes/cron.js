@@ -16,7 +16,11 @@ router.use((req, res, next) => {
   log.info({ method: req.method, url: req.originalUrl, path: req.path }, 'Request received');
   const auth = req.headers['authorization'];
   const secret = process.env.CRON_SECRET;
-  if (secret && auth !== `Bearer ${secret}`) {
+  // Fail closed: missing secret config or wrong/absent auth → 401
+  if (!secret) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  if (auth !== `Bearer ${secret}`) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
   next();

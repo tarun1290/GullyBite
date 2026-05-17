@@ -14,16 +14,24 @@
 
 const express = require('express');
 const { col } = require('../config/database');
+const { rateLimitFn } = require('../middleware/rateLimit');
 const log = require('../utils/logger').child({ component: 'gbrefRedirect' });
 
 const router = express.Router();
+
+// Public, unauthenticated, one Mongo $inc per hit — IP-throttle to blunt
+// click-count inflation / DB-write abuse. 30 req / 60s per IP, Redis-backed.
+const gbrefLimiter = rateLimitFn((req) => {
+  const ip = req.ip || req.headers['x-forwarded-for'] || 'unknown';
+  return `gbref:${ip}`;
+}, 30, 60, { message: 'Too many requests, slow down' });
 
 function fallbackUrl() {
   const base = (process.env.BASE_URL || '').replace(/\/+$/, '');
   return base || '/';
 }
 
-router.get('/:code', async (req, res) => {
+router.get('/:code', gbrefLimiter, async (req, res) => {
   const code = String(req.params.code || '').trim();
   if (!code) return res.redirect(302, fallbackUrl());
   try {

@@ -3,6 +3,7 @@
 import { useCallback, useMemo } from 'react';
 import type { ChartData, ChartOptions } from 'chart.js';
 import ChartCanvas from '../../shared/ChartCanvas';
+import EmptyState from '../../shared/EmptyState';
 import SectionError from './SectionError';
 import useAnalyticsFetch from './useAnalyticsFetch';
 import { getTopItems } from '../../../api/restaurant';
@@ -70,10 +71,14 @@ export default function TopItemsSection({ dateRange }: TopItemsSectionProps) {
           <SectionError message={error} onRetry={refetch} />
         ) : chartConfig ? (
           <ChartCanvas type="bar" data={chartConfig.data} options={chartConfig.options} height={300} />
+        ) : loading ? (
+          <div className="text-center text-dim py-12 text-base">Loading…</div>
         ) : (
-          <div className="text-center text-dim py-12 text-base">
-            {loading ? 'Loading…' : 'No items sold in this period'}
-          </div>
+          <EmptyState
+            icon="📊"
+            title="No top items yet"
+            description="Items will rank here once orders come in"
+          />
         )}
       </div>
     </div>

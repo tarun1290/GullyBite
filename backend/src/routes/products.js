@@ -71,6 +71,7 @@ router.post('/:id/assign-branch', validateAssignBranchPayload, async (req, res) 
     const updated = await productSvc.assignProductToBranch({
       product_id: req.params.id,
       branch_id: req.body.branch_id,
+      restaurant_id: req.restaurantId,
       price: req.body.price,
       tax_percentage: req.body.tax_percentage,
       availability: req.body.availability,
@@ -88,6 +89,7 @@ router.post('/:id/unassign-branch', async (req, res) => {
     const updated = await productSvc.unassignFromBranch({
       product_id: req.params.id,
       branch_id: req.body.branch_id,
+      restaurant_id: req.restaurantId,
     });
     res.json(updated);
   } catch (err) {

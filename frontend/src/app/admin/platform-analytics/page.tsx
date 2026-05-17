@@ -171,7 +171,8 @@ export default function AdminPlatformAnalyticsPage() {
             No restaurants with marketing spend in this period.
           </div>
         ) : (
-          <table className="data-table w-full text-base">
+          <div className="tbl overflow-x-auto w-full">
+          <table className="w-full text-base min-w-[600px]">
             <thead>
               <tr>
                 <th className="text-left">Restaurant</th>
@@ -198,6 +199,7 @@ export default function AdminPlatformAnalyticsPage() {
               ))}
             </tbody>
           </table>
+          </div>
         )}
       </Card>
 

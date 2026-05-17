@@ -39,6 +39,7 @@ import LoyaltyTab from './LoyaltyTab';
 import ReferralsTab from './ReferralsTab';
 import DineInTab from './DineInTab';
 import SlideOverDrawer from '../../../components/shared/SlideOverDrawer';
+import EmptyState from '../../../components/shared/EmptyState';
 import type { MarketingCampaignEstimate, SegmentCondition, CustomerSegment } from '../../../api/restaurant';
 import type { SegmentAnalytics } from '../../../types';
 import { CampaignAnalyticsStrip, JourneysAnalyticsStrip } from './MarketingAnalyticsStrips';
@@ -103,15 +104,18 @@ const USE_CASE_LABELS: Record<string, string> = {
   general: 'General',
 };
 
-interface StatusStyle { bg: string; fg: string; label: string }
+interface StatusStyle { cls: string; label: string }
 
+// Tailwind v4 — no dynamic class strings. The per-status colours aren't
+// in the token theme, so map each status to a literal arbitrary-value
+// class pair (same hexes as the old inline bg/fg) the JIT can see.
 const STATUS_STYLE: Record<string, StatusStyle> = {
-  draft:     { bg: '#e5e7eb', fg: '#374151', label: 'Draft' },
-  scheduled: { bg: '#dbeafe', fg: '#1e40af', label: 'Scheduled' },
-  sending:   { bg: '#fef3c7', fg: '#92400e', label: 'Sending' },
-  sent:      { bg: '#dcfce7', fg: '#166534', label: 'Sent' },
-  failed:    { bg: '#fee2e2', fg: '#991b1b', label: 'Failed' },
-  cancelled: { bg: '#e5e7eb', fg: '#6b7280', label: 'Cancelled' },
+  draft:     { cls: 'bg-[#e5e7eb] text-[#374151]', label: 'Draft' },
+  scheduled: { cls: 'bg-[#dbeafe] text-[#1e40af]', label: 'Scheduled' },
+  sending:   { cls: 'bg-[#fef3c7] text-[#92400e]', label: 'Sending' },
+  sent:      { cls: 'bg-[#dcfce7] text-[#166534]', label: 'Sent' },
+  failed:    { cls: 'bg-[#fee2e2] text-[#991b1b]', label: 'Failed' },
+  cancelled: { cls: 'bg-[#e5e7eb] text-[#6b7280]', label: 'Cancelled' },
 };
 
 interface WalletData {
@@ -215,11 +219,11 @@ interface CampaignPayload {
 interface StatusChipProps { status?: string }
 
 function StatusChip({ status }: StatusChipProps) {
-  const fallback: StatusStyle = { bg: '#e5e7eb', fg: '#374151', label: status || '—' };
+  const fallback: StatusStyle = { cls: 'bg-[#e5e7eb] text-[#374151]', label: status || '—' };
   const s = STATUS_STYLE[status || ''] || fallback;
   return (
-    // bg/fg from STATUS_STYLE map keyed by status at runtime
-    <span className="chip text-xs" style={{ background: s.bg, color: s.fg }}>
+    // colour class from STATUS_STYLE map keyed by status at runtime
+    <span className={`chip text-xs ${s.cls}`}>
       {s.label}
     </span>
   );
@@ -312,7 +316,7 @@ function HistoryList({ campaigns, summary, onCancel, onRefresh, onCreate, disabl
       </div>
 
       {summary && (
-        <div className="grid grid-cols-4 gap-4 mb-4">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-4">
           <SummaryCard label="Campaigns" value={summary.total_campaigns} />
           <SummaryCard label="This month" value={summary.campaigns_this_month} />
           <SummaryCard label="Messages sent" value={summary.total_sent} />
@@ -326,8 +330,13 @@ function HistoryList({ campaigns, summary, onCancel, onRefresh, onCreate, disabl
 
       {campaigns.length === 0 ? (
         <div className="card">
-          <div className="cb text-dim">
-            No campaigns yet. Click <strong>Create Campaign</strong> to blast your first template.
+          <div className="cb">
+            <EmptyState
+              icon="⚡"
+              title="No campaigns yet"
+              description="Blast your first template to a customer segment"
+              action={{ label: '+ Create Campaign', onClick: onCreate }}
+            />
           </div>
         </div>
       ) : (
@@ -390,7 +399,7 @@ function SummaryCard({ label, value }: SummaryCardProps) {
   return (
     <div className="card min-w-0 mb-0">
       <div className="cb py-2 px-3">
-        <div className="text-xs text-dim uppercase tracking-[0.03em] truncate">{label}</div>
+        <div className="text-xs text-dim uppercase tracking-[0.03em]">{label}</div>
         <div className="text-lg font-semibold mt-0.5 truncate">{value ?? 0}</div>
       </div>
     </div>
@@ -1170,7 +1179,7 @@ function Step2Template({
 
   return (
     // grid columns conditional on whether a template is selected at runtime
-    <div className="grid gap-4" style={{ gridTemplateColumns: template ? '1fr 1fr' : '1fr' }}>
+    <div className={`grid gap-4 ${template ? 'grid-cols-2' : 'grid-cols-1'}`}>
       <div>
         <h3 className="text-md mt-0 mb-2.5 mx-0">Pick a template</h3>
         {grouped.length === 0 ? (
@@ -1599,60 +1608,60 @@ export default function MarketingPage() {
 
   return (
     <div>
-      <div className="chips chips--divided mb-4">
+      <div className="chips--divided mb-4 flex flex-nowrap overflow-x-auto gap-2 pb-1 [-webkit-overflow-scrolling:touch] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         <button
           type="button"
           onClick={() => selectTab('manual')}
-          className={tab === 'manual' ? 'chip on' : 'chip'}
+          className={`flex-shrink-0 ${tab === 'manual' ? 'chip on' : 'chip'}`}
         >
           Manual Campaigns
         </button>
         <button
           type="button"
           onClick={() => selectTab('journeys')}
-          className={tab === 'journeys' ? 'chip on' : 'chip'}
+          className={`flex-shrink-0 ${tab === 'journeys' ? 'chip on' : 'chip'}`}
         >
           Auto Journeys
         </button>
         <button
           type="button"
           onClick={() => selectTab('customers')}
-          className={tab === 'customers' ? 'chip on' : 'chip'}
+          className={`flex-shrink-0 ${tab === 'customers' ? 'chip on' : 'chip'}`}
         >
           Customers
         </button>
         <button
           type="button"
           onClick={() => selectTab('loyalty')}
-          className={tab === 'loyalty' ? 'chip on' : 'chip'}
+          className={`flex-shrink-0 ${tab === 'loyalty' ? 'chip on' : 'chip'}`}
         >
           Loyalty
         </button>
         <button
           type="button"
           onClick={() => selectTab('coupons')}
-          className={tab === 'coupons' ? 'chip on' : 'chip'}
+          className={`flex-shrink-0 ${tab === 'coupons' ? 'chip on' : 'chip'}`}
         >
           Coupons
         </button>
         <button
           type="button"
           onClick={() => selectTab('referrals')}
-          className={tab === 'referrals' ? 'chip on' : 'chip'}
+          className={`flex-shrink-0 ${tab === 'referrals' ? 'chip on' : 'chip'}`}
         >
           Referrals
         </button>
         <button
           type="button"
           onClick={() => selectTab('dinein')}
-          className={tab === 'dinein' ? 'chip on' : 'chip'}
+          className={`flex-shrink-0 ${tab === 'dinein' ? 'chip on' : 'chip'}`}
         >
           Dine-in
         </button>
         <button
           type="button"
           onClick={() => selectTab('messages')}
-          className={tab === 'messages' ? 'chip on' : 'chip'}
+          className={`flex-shrink-0 ${tab === 'messages' ? 'chip on' : 'chip'}`}
         >
           Marketing Messages
         </button>
