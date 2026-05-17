@@ -2227,7 +2227,7 @@ router.delete('/branches/:id/permanent', async (req, res) => {
       console.log(`[Branch:PermanentDelete] Deleting ${retailerIds.length} items from Meta catalog for branch ${branchId}`);
       (async () => {
         try {
-          const apiVersion = process.env.META_API_VERSION || 'v21.0';
+          const apiVersion = process.env.META_API_VERSION || 'v25.0';
           const body = {
             allow_upsert: false,
             requests: retailerIds.map((id) => ({

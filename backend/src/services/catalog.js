@@ -83,6 +83,59 @@ const ProductCatalog = bizSdk.ProductCatalog;
 
 const GRAPH = metaConfig.graphUrl;
 
+// ── Async sleep helper (ms) ─────────────────────────────────
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+// ── 429 / rate-limit detection + Retry-After parsing ────────
+// Detects an HTTP 429 from either a raw axios error or a
+// facebook-nodejs-business-sdk error wrapper. Per HTTP spec the
+// Retry-After header is in SECONDS — convert to ms. Falls back to
+// a default when the header is absent or unparseable.
+function _isRateLimited(err) {
+  if (!err) return false;
+  if (err.response?.status === 429) return true;
+  // SDK / alternate axios shapes that still represent an HTTP 429.
+  if (err.response?.statusCode === 429) return true;
+  if (err.status === 429 || err.httpStatus === 429) return true;
+  if (err._error?.response?.status === 429) return true;
+  return false;
+}
+
+function _retryAfterMs(err, defaultMs) {
+  const hdrs = err?.response?.headers || err?._error?.response?.headers || {};
+  const raw = hdrs['retry-after'] ?? hdrs['Retry-After'] ?? hdrs['x-business-use-case-usage'];
+  if (raw != null) {
+    const secs = Number(String(raw).trim());
+    if (Number.isFinite(secs) && secs > 0) return secs * 1000;
+  }
+  return defaultMs;
+}
+
+// ── 429-retry wrapper for raw-axios items_batch catalog POSTs ─
+// Re-issues `fn` (an axios call returning its response) up to 3
+// extra times when it fails with HTTP 429, honouring Retry-After
+// (seconds → ms; default 60s). Any non-429 error is rethrown
+// immediately so existing per-call failure handling is unchanged.
+// If still rate-limited after the retries, the final 429 error is
+// rethrown so the caller's catch treats it as a failure as before.
+async function _withItemsBatch429Retry(fn) {
+  const MAX_429_RETRIES = 3;
+  let attempt = 0;
+  // eslint-disable-next-line no-constant-condition
+  while (true) {
+    try {
+      return await fn();
+    } catch (err) {
+      if (!_isRateLimited(err)) throw err;
+      attempt += 1;
+      if (attempt > MAX_429_RETRIES) throw err;
+      const waitMs = _retryAfterMs(err, 60000);
+      log.warn({ attempt, maxRetries: MAX_429_RETRIES, waitMs }, 'items_batch rate-limited (429) — backing off before retry');
+      await sleep(waitMs);
+    }
+  }
+}
+
 // ── SDK init helper — always uses platform catalog token ────
 function initSdk(accessToken) {
   bizSdk.FacebookAdsApi.init(accessToken);
@@ -850,6 +903,76 @@ const _syncBranchCatalogLocked = async (branchId) => {
             results.errors.push(`Batch ${batchNum}: catalog re-discovery failed — ${fixErr.message}`);
             batchDone = true;
           }
+        } else if (_isRateLimited(err)) {
+          // ── HTTP 429 rate-limit branch ───────────────────────
+          // Distinct from the Tier-1 stale-catalog recovery above and
+          // from the permanent-failure else below. We do our OWN bounded
+          // retry of the same batch call (up to 3 attempts) honouring the
+          // Retry-After header (seconds → ms; default 60s) and do NOT
+          // mark the batch failed until those retries are exhausted.
+          const MAX_429_RETRIES = 3;
+          let rlOk = false;
+          let lastErr = err;
+          for (let rl = 1; rl <= MAX_429_RETRIES && !rlOk; rl++) {
+            const waitMs = _retryAfterMs(lastErr, 60000);
+            log.warn({ batchNum, retry: rl, maxRetries: MAX_429_RETRIES, waitMs }, 'Batch rate-limited (429) — backing off before retry');
+            await sleep(waitMs);
+            try {
+              const retryCatalogObj = new ProductCatalog(branch.catalog_id);
+              await retryCatalogObj.createItemsBatch([], {
+                allow_upsert: true,
+                item_type: 'PRODUCT_ITEM',
+                requests: batch,
+              });
+              rlOk = true;
+              results.updated += batch.filter(r => r.method === 'UPDATE').length;
+              results.deleted += batch.filter(r => r.method === 'DELETE').length;
+
+              const syncedIds = batch
+                .filter(r => r.method === 'UPDATE')
+                .map(r => items.find(it => it.retailer_id === r.retailer_id)?._id)
+                .filter(Boolean);
+              if (syncedIds.length) {
+                await col('menu_items').updateMany(
+                  { _id: { $in: syncedIds } },
+                  {
+                    $set:   { catalog_sync_status: 'synced', catalog_synced_at: new Date() },
+                    $unset: { catalog_sync_error: '', catalog_sync_failed_at: '' },
+                  }
+                );
+              }
+              log.info({ batchNum, retry: rl }, 'Batch succeeded after 429 backoff');
+            } catch (retryErr) {
+              lastErr = retryErr;
+              if (!_isRateLimited(retryErr)) {
+                // Retry surfaced a different (non-429) error — stop retrying
+                // and fall through to permanent failure below.
+                log.error({ err: retryErr, batchNum, retry: rl }, 'Retry after 429 failed with non-429 error');
+                break;
+              }
+              log.warn({ batchNum, retry: rl }, 'Batch still rate-limited (429) after backoff');
+            }
+          }
+
+          if (rlOk) {
+            batchDone = true;
+          } else {
+            const rlMsg = lastErr._error?.error?.message || lastErr.response?.data?.error?.message || lastErr.message;
+            log.error({ batchNum, errMsg: rlMsg }, `Batch failed — rate-limited after ${MAX_429_RETRIES} retries`);
+            results.failed += batch.length;
+            results.errors.push(`Batch ${batchNum}: rate-limited (429) after ${MAX_429_RETRIES} retries — ${rlMsg}`);
+
+            const failedIds = batch
+              .map(r => items.find(it => it.retailer_id === r.retailer_id)?._id)
+              .filter(Boolean);
+            if (failedIds.length) {
+              await col('menu_items').updateMany(
+                { _id: { $in: failedIds } },
+                { $set: { catalog_sync_status: 'error' } }
+              ).catch(() => {});
+            }
+            batchDone = true;
+          }
         } else {
           log.error({ batchNum, errMsg }, 'Batch failed');
           results.failed += batch.length;
@@ -1134,14 +1257,14 @@ const bulkDeleteProducts = async (items, branchId) => {
     }));
 
     try {
-      await axios.post(
+      await _withItemsBatch429Retry(() => axios.post(
         `${GRAPH}/${catalogId}/items_batch`,
         {
           item_type: 'PRODUCT_ITEM',
           requests: JSON.stringify(requests),
         },
         { params: { access_token: token }, timeout: 30000 }
-      );
+      ));
       results.deleted += chunk.length;
       log.info({ branchId, catalogId, count: chunk.length }, 'bulkDeleteProducts chunk succeeded');
     } catch (err) {
@@ -1206,7 +1329,7 @@ const syncItemAvailability = async (restaurantId, menuItem) => {
     const token = _getCatalogToken();
     const avail = menuItem.is_available ? 'in stock' : 'out of stock';
 
-    const resp = await axios.post(
+    const resp = await _withItemsBatch429Retry(() => axios.post(
       `${GRAPH}/${catalogId}/items_batch`,
       {
         item_type: 'PRODUCT_ITEM',
@@ -1217,7 +1340,7 @@ const syncItemAvailability = async (restaurantId, menuItem) => {
         }]),
       },
       { params: { access_token: token }, timeout: 15000 }
-    );
+    ));
 
     const handle = resp.data?.handles?.[0] || null;
     log.info({ retailerId: menuItem.retailer_id, availability: avail, handle }, 'Availability update queued');
@@ -1274,11 +1397,11 @@ const syncBulkAvailability = async (restaurantId, items) => {
       }));
 
       try {
-        const resp = await axios.post(
+        const resp = await _withItemsBatch429Retry(() => axios.post(
           `${GRAPH}/${catalogId}/items_batch`,
           { item_type: 'PRODUCT_ITEM', requests: JSON.stringify(requests) },
           { params: { access_token: token }, timeout: 30000 }
-        );
+        ));
         const handle = resp.data?.handles?.[0] || null;
         if (handle) handles.push(handle);
       } catch (batchErr) {

@@ -169,6 +169,89 @@ async function seedPlatformFlowAssignment(restaurantId) {
   }
 }
 
+// ── META ACCESS TOKEN ENCRYPTION (AES-256-GCM) ───────────────
+// `meta_access_token` is a long-lived Meta credential stored on the
+// restaurant doc. At rest it is encrypted with AES-256-GCM keyed by
+// META_TOKEN_ENCRYPTION_KEY (a 32-byte / 64-hex-char key).
+//
+// DEFERRED HARD REQUIREMENT — read before "fixing" this:
+//   The key is intentionally NOT a boot requirement and is NOT added to
+//   any REQUIRED_SECRETS / startup validation list. If we hard-required
+//   it at module load (process.exit / throw on import), every existing
+//   record written BEFORE this change — still plaintext until the
+//   one-time backfill (backend/scripts/encrypt-meta-tokens.js) runs and
+//   overwrites it — would break the server on the very next restart,
+//   because the deploy carrying the key change restarts before the
+//   backfill can run. So:
+//     • Module load NEVER throws / exits on a missing key.
+//     • decryptToken() NEVER needs the key for the passthrough path, so
+//       legacy plaintext records keep working until they are overwritten.
+//     • encryptToken() is the ONLY place that hard-needs the key; if it's
+//       missing it logs FATAL and throws, and the (single) write site
+//       catches that so one bad deploy fails loudly WITHOUT crashing the
+//       whole server. The genuinely-hard process.exit(1) lives in the
+//       migration script, where it is safe.
+//   Make the key boot-required only AFTER the backfill has run in prod
+//   and every record is confirmed encrypted.
+const META_TOKEN_ENC_ALGO = 'aes-256-gcm';
+
+// Lazy key getter — resolved per call (NOT at module load) so a missing
+// key never blocks boot. Returns a 32-byte Buffer or throws.
+function _getMetaTokenEncryptionKey() {
+  const raw = process.env.META_TOKEN_ENCRYPTION_KEY;
+  if (!raw || !/^[0-9a-fA-F]{64}$/.test(raw)) {
+    throw new Error(
+      'META_TOKEN_ENCRYPTION_KEY is missing or invalid — it must be a 32-byte ' +
+      'hex string (exactly 64 hex characters).'
+    );
+  }
+  const key = Buffer.from(raw, 'hex');
+  if (key.length !== 32) {
+    throw new Error('META_TOKEN_ENCRYPTION_KEY did not decode to 32 bytes.');
+  }
+  return key;
+}
+
+// encryptToken — random 12-byte IV, AES-256-GCM. Output is
+// `iv:authTag:ciphertext`, all hex, exactly two colons. Throws (after a
+// FATAL log) if the key is missing/invalid; callers MUST catch so a
+// single missing-key deploy fails loudly but does not crash the server.
+function encryptToken(plain) {
+  let key;
+  try {
+    key = _getMetaTokenEncryptionKey();
+  } catch (err) {
+    // The shared logger (utils/logger) has no `fatal` level — `error` is
+    // the highest it supports — so emit at error with a FATAL: marker.
+    log.error({ err }, 'FATAL: encryptToken cannot encrypt meta_access_token — META_TOKEN_ENCRYPTION_KEY missing/invalid');
+    throw err;
+  }
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv(META_TOKEN_ENC_ALGO, key, iv);
+  const ciphertext = Buffer.concat([cipher.update(String(plain), 'utf8'), cipher.final()]);
+  const authTag = cipher.getAuthTag();
+  return `${iv.toString('hex')}:${authTag.toString('hex')}:${ciphertext.toString('hex')}`;
+}
+
+// decryptToken — migration-compatible. Only treats `value` as ciphertext
+// when it is a string with EXACTLY two colons AND all three segments are
+// valid hex; otherwise it returns `value` unchanged (legacy plaintext
+// passthrough). This path NEVER touches the key, so unencrypted records
+// keep working until the backfill overwrites them.
+function decryptToken(value) {
+  if (typeof value !== 'string') return value;
+  const parts = value.split(':');
+  if (parts.length !== 3) return value;
+  const [ivHex, tagHex, dataHex] = parts;
+  const isHex = (s) => s.length > 0 && /^[0-9a-fA-F]+$/.test(s) && s.length % 2 === 0;
+  if (!isHex(ivHex) || !isHex(tagHex) || !isHex(dataHex)) return value;
+  const key = _getMetaTokenEncryptionKey();
+  const decipher = crypto.createDecipheriv(META_TOKEN_ENC_ALGO, key, Buffer.from(ivHex, 'hex'));
+  decipher.setAuthTag(Buffer.from(tagHex, 'hex'));
+  const plain = Buffer.concat([decipher.update(Buffer.from(dataHex, 'hex')), decipher.final()]);
+  return plain.toString('utf8');
+}
+
 // ── Log OAuth redirect URIs at startup ──
 log.info({
   googleCallback: `${process.env.BASE_URL}/auth/google/callback`,
@@ -873,9 +956,20 @@ router.get('/callback', async (req, res) => {
       req.log.error({ restaurantId }, 'Callback: restaurant not found for state');
       return finishWithResult(restaurantId, { ok: false, error: 'tenant_missing', message: 'Your account could not be located. Please sign in and retry.' });
     }
+    // Encrypt the long-lived token at rest. encryptToken throws (after a
+    // FATAL log) if META_TOKEN_ENCRYPTION_KEY is missing/invalid — catch it
+    // here so a misconfigured deploy fails THIS request loudly instead of
+    // crashing the server (see deferred-hard-requirement note on the helpers).
+    let encryptedMetaToken;
+    try {
+      encryptedMetaToken = encryptToken(longToken);
+    } catch (encErr) {
+      req.log.error({ err: encErr, restaurantId }, 'meta_access_token encryption failed (callback)');
+      return finishWithResult(restaurantId, { ok: false, error: 'token_encrypt_failed', message: 'A server configuration issue prevented saving your WhatsApp connection. Please contact support.' });
+    }
     const $set = {
       meta_user_id: metaUser.id,
-      meta_access_token: longToken,
+      meta_access_token: encryptedMetaToken,
       meta_token_expires_at: expiresAt,
       whatsapp_connected: true,
       onboarding_step: 5,
@@ -1007,6 +1101,58 @@ router.get('/resolve-meta-connect', requireAuth, (req, res) => {
   res.status(410).json({ error: 'This endpoint is no longer used. Please refresh and reconnect.' });
 });
 
+// ─── PLATFORM TOKEN HEALTH ─────────────────────────────────────
+// The token model is "platform System User token for everything" — the
+// per-restaurant meta_access_token is stored but NOT used for messaging.
+// So WhatsApp messaging health for EVERY restaurant hinges on the single
+// platform token (META_SYSTEM_USER_TOKEN), not on any per-restaurant
+// token's age. The dashboard banner consumes this to warn when the
+// platform token has expired/been invalidated.
+//
+// Result is cached 1h under `platform_token_health` via the shared
+// in-memory cache (memcache) so we hit Meta at most once an hour across
+// all callers. Any authenticated restaurant user may call it.
+router.get('/platform-token-health', requireAuth, async (req, res) => {
+  const CACHE_KEY = 'platform_token_health';
+  const CACHE_TTL_SECONDS = 60 * 60; // 1 hour
+
+  // Serve from cache on hit. Cache errors are swallowed (cache is an
+  // optimization, never a correctness dependency).
+  try {
+    const cached = memcache.get(CACHE_KEY);
+    if (cached) return res.json(cached);
+  } catch (e) {
+    req.log.warn({ err: e }, 'platform-token-health: cache read failed (ignored)');
+  }
+
+  let result;
+  const token = metaConfig.systemUserToken; // reads META_SYSTEM_USER_TOKEN
+  if (!token) {
+    result = { status: 'expired_or_invalid', error: 'META_SYSTEM_USER_TOKEN not set' };
+  } else {
+    try {
+      // Mirror the existing graph `/me` axios pattern used elsewhere in
+      // this file (META_GRAPH_URL + params.access_token).
+      const meRes = await axios.get(`${META_GRAPH_URL}/me`, {
+        params: { fields: 'id,name', access_token: token },
+        timeout: 10000,
+      });
+      result = { status: 'healthy', name: meRes.data?.name || null };
+    } catch (err) {
+      const msg = err?.response?.data?.error?.message || err?.message || 'token check failed';
+      result = { status: 'expired_or_invalid', error: msg };
+    }
+  }
+
+  try {
+    memcache.set(CACHE_KEY, result, CACHE_TTL_SECONDS);
+  } catch (e) {
+    req.log.warn({ err: e }, 'platform-token-health: cache write failed (ignored)');
+  }
+
+  return res.json(result);
+});
+
 // ─── BACKWARD COMPAT: Warn if old meta_access_token flow is used ──
 // This will be removed after migration period.
 
@@ -1099,8 +1245,19 @@ router.post('/connect-meta', requireAuth, express.json(), async (req, res) => {
     );
     req.log.info({ approvalStatus: currentRestaurant?.approval_status, hasSubmittedAt: !!currentRestaurant?.submitted_at }, 'Current restaurant state');
 
+    // Encrypt the long-lived token at rest. encryptToken throws (after a
+    // FATAL log) if META_TOKEN_ENCRYPTION_KEY is missing/invalid — catch it
+    // here so a misconfigured deploy fails THIS request loudly instead of
+    // crashing the server (see deferred-hard-requirement note on the helpers).
+    let encryptedMetaToken;
+    try {
+      encryptedMetaToken = encryptToken(longToken);
+    } catch (encErr) {
+      req.log.error({ err: encErr, restaurantId: req.restaurantId }, 'meta_access_token encryption failed (connect-meta)');
+      return res.status(500).json({ error: 'A server configuration issue prevented saving your WhatsApp connection. Please contact support.' });
+    }
     const $set = {
-      meta_user_id: metaUser.id, meta_access_token: longToken, meta_token_expires_at: expiresAt,
+      meta_user_id: metaUser.id, meta_access_token: encryptedMetaToken, meta_token_expires_at: expiresAt,
       whatsapp_connected: true,
       onboarding_step: 5, updated_at: new Date(),
     };

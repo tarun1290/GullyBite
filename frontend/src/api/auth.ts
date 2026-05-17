@@ -58,3 +58,17 @@ export async function pollMetaResult(resultId: string): Promise<unknown> {
   const { data } = await client.get('/auth/meta/result', { params: { id: resultId } });
   return data;
 }
+
+// Platform (System User) token health. WhatsApp messaging for every
+// restaurant runs on the single platform token, so this — not any
+// per-restaurant token age — is what the dashboard banner reflects.
+export interface PlatformTokenHealth {
+  status: 'healthy' | 'expired_or_invalid';
+  name?: string | null;
+  error?: string;
+}
+
+export async function getPlatformTokenHealth(): Promise<PlatformTokenHealth> {
+  const { data } = await client.get<PlatformTokenHealth>('/auth/platform-token-health');
+  return data;
+}

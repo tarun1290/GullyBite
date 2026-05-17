@@ -14,7 +14,10 @@ const apiUrl = (phoneNumberId) =>
 
 // ─── CORE SEND FUNCTION ───────────────────────────────────────
 // All functions below call this one. Includes 1 automatic retry on failure.
-const sendMsg = async (phoneNumberId, accessToken, to, body, _retried = false) => {
+// _retried (timeout/5xx single-retry) and _rl429 (429 retry counter) are
+// internal recursion bookkeeping with defaults — the caller-facing
+// signature is still (phoneNumberId, accessToken, to, body).
+const sendMsg = async (phoneNumberId, accessToken, to, body, _retried = false, _rl429 = 0) => {
   const payload = { messaging_product: 'whatsapp', recipient_type: 'individual', to, ...body };
   const start = Date.now();
   try {
@@ -27,11 +30,21 @@ const sendMsg = async (phoneNumberId, accessToken, to, body, _retried = false) =
   } catch (err) {
     const e = err.response?.data?.error;
     log.error({ to: to?.slice(-4), sendMs: Date.now() - start, errorCode: e?.code, errorMsg: e?.message }, 'Send failed');
+    // 429 rate limit: retry up to 3 times, honoring Retry-After (seconds
+    // → ms) when present, else 5s. Independent of the timeout/5xx
+    // single-retry path below so a throttled send is not given up on.
+    if (err.response?.status === 429 && _rl429 < 3) {
+      const ra = err.response?.headers?.['retry-after'];
+      const waitMs = ra != null && !Number.isNaN(Number(ra)) ? Number(ra) * 1000 : 5000;
+      log.info({ to: to?.slice(-4), attempt: _rl429 + 1, waitMs }, 'WA 429 — retrying after backoff');
+      await new Promise(r => setTimeout(r, waitMs));
+      return sendMsg(phoneNumberId, accessToken, to, body, _retried, _rl429 + 1);
+    }
     // Retry once on timeout or 5xx
     if (!_retried && (err.code === 'ECONNABORTED' || err.code === 'ETIMEDOUT' || (err.response?.status >= 500))) {
       log.info({ to: to?.slice(-4) }, 'Retrying send after 1s');
       await new Promise(r => setTimeout(r, 1000));
-      return sendMsg(phoneNumberId, accessToken, to, body, true);
+      return sendMsg(phoneNumberId, accessToken, to, body, true, _rl429);
     }
     throw err;
   }

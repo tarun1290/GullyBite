@@ -64,6 +64,19 @@ function _resetOrderLinkage(session) {
   };
 }
 
+// ─── CHECKOUT-ENABLED PREDICATE ───────────────────────────────
+// Single source of truth for "is in-WhatsApp interactive checkout
+// (order_details / sendPaymentRequest) allowed right now?". Mirrors the
+// exact two-condition gate used inside _sendOrderCheckout (the Tier-1
+// gate): the Razorpay WhatsApp Pay configuration_name must be set in the
+// environment AND the platform_settings:checkout_order kill-switch must
+// be enabled. Extracted as a tiny helper so the other call sites that
+// build order_details inline can apply the SAME gate without duplicating
+// the predicate or touching the original gate. Returns a boolean.
+async function isCheckoutEnabled() {
+  return !!(process.env.RAZORPAY_WA_CONFIG_NAME && (await col('platform_settings').findOne({ _id: 'checkout_order' }))?.enabled);
+}
+
 // ─── CROSS-BRANCH CART REMEDIATION ─────────────────────────────
 // When a customer browses one branch's catalog (e.g. Madhapur) and then
 // their session branch resolves to a different branch (e.g. Marathahalli)
@@ -1782,6 +1795,20 @@ const handleTextMessage = async (msg, customer, conv, waAccount) => {
       try {
         const fullOrder = session.orderId ? await orderSvc.getOrderDetails(session.orderId) : null;
         if (fullOrder) {
+          // Same two-condition gate as _sendOrderCheckout (Tier-1): only
+          // send the in-WhatsApp order_details card when checkout is
+          // actually enabled. If it's off, fall back to the standard
+          // payment-pending reminder text used by this same handler
+          // (below) rather than sending a broken/half-configured card.
+          if (!(await isCheckoutEnabled())) {
+            log.warn({ orderId: session.orderId }, 'AWAITING_PAYMENT resend: checkout disabled — sending payment-pending text fallback');
+            await wa.sendText(pid, token, to,
+              `💳 Your order #${session.orderNumber || ''} is awaiting payment.\n\n` +
+              (session.paymentLinkUrl ? `Pay here: ${session.paymentLinkUrl}\n\n` : '') +
+              'Type *PAY* to get a new payment link, or *CANCEL* to cancel your order.'
+            );
+            return;
+          }
           const branch = await col('branches').findOne({ _id: session.branchId });
           const restaurant = branch ? await col('restaurants').findOne({ _id: branch.restaurant_id }) : null;
           await wa.sendPaymentRequest(pid, token, to, {
@@ -2686,6 +2713,18 @@ const handleInteractiveReply = async (msg, customer, conv, waAccount) => {
         try {
           const fullOrder = await orderSvc.getOrderDetails(session.orderId);
           if (fullOrder) {
+            // Same two-condition gate as _sendOrderCheckout (Tier-1).
+            // When checkout is disabled, fall back to the standard
+            // payment-pending reminder text rather than a broken card.
+            if (!(await isCheckoutEnabled())) {
+              log.warn({ orderId: session.orderId }, 'CONFIRM_ORDER resend: checkout disabled — sending payment-pending text fallback');
+              await wa.sendText(pid, token, to,
+                `💳 Your order #${session.orderNumber || ''} is awaiting payment.\n\n` +
+                (session.paymentLinkUrl ? `Pay here: ${session.paymentLinkUrl}\n\n` : '') +
+                'Type *PAY* to get a new payment link, or *CANCEL* to cancel your order.'
+              );
+              return;
+            }
             const branch = await col('branches').findOne({ _id: session.branchId });
             const restaurant = branch ? await col('restaurants').findOne({ _id: branch.restaurant_id }) : null;
             await wa.sendPaymentRequest(pid, token, to, {
@@ -2777,22 +2816,44 @@ const handleInteractiveReply = async (msg, customer, conv, waAccount) => {
       try {
         const branch = await col('branches').findOne({ _id: session.branchId });
         const restaurant = branch ? await col('restaurants').findOne({ _id: branch.restaurant_id }) : null;
-        await wa.sendPaymentRequest(pid, token, to, {
-          order: fullOrder,
-          items: fullOrder.items,
-          customerName: customer.name,
-          restaurantName: restaurant?.business_name || fullOrder.business_name,
-          deliveryAddress: session.structuredAddress || (session.deliveryAddress ? { address: session.deliveryAddress } : null),
-        });
-        await orderSvc.setState(conv.id, 'AWAITING_PAYMENT', {
-          ...session,
-          orderId: order.id,
-          // Prefer the per-restaurant display id so the
-          // payment-pending reminder ("Your order #X is awaiting
-          // payment") shows ABBR-MMDD-NNN. Falls back to the legacy
-          // order_number for orders created before this rollout.
-          orderNumber: order.display_order_id || order.order_number,
-        });
+        // Same two-condition gate as _sendOrderCheckout (Tier-1). The
+        // order is already created here, so in BOTH branches we move to
+        // AWAITING_PAYMENT (so PAY/CANCEL and the payment-pending
+        // reminder keep working) and the shared payment_pending
+        // abandoned-cart tracking below still runs. When checkout is
+        // disabled we send the standard payment-pending reminder text
+        // instead of a broken card.
+        if (await isCheckoutEnabled()) {
+          await wa.sendPaymentRequest(pid, token, to, {
+            order: fullOrder,
+            items: fullOrder.items,
+            customerName: customer.name,
+            restaurantName: restaurant?.business_name || fullOrder.business_name,
+            deliveryAddress: session.structuredAddress || (session.deliveryAddress ? { address: session.deliveryAddress } : null),
+          });
+          await orderSvc.setState(conv.id, 'AWAITING_PAYMENT', {
+            ...session,
+            orderId: order.id,
+            // Prefer the per-restaurant display id so the
+            // payment-pending reminder ("Your order #X is awaiting
+            // payment") shows ABBR-MMDD-NNN. Falls back to the legacy
+            // order_number for orders created before this rollout.
+            orderNumber: order.display_order_id || order.order_number,
+          });
+        } else {
+          log.warn({ orderId: order.id }, 'CONFIRM_ORDER checkout: checkout disabled — sending payment-pending text fallback');
+          const _orderNumber = order.display_order_id || order.order_number;
+          await orderSvc.setState(conv.id, 'AWAITING_PAYMENT', {
+            ...session,
+            orderId: order.id,
+            orderNumber: _orderNumber,
+          });
+          await wa.sendText(pid, token, to,
+            `💳 Your order #${_orderNumber || ''} is awaiting payment.\n\n` +
+            (session.paymentLinkUrl ? `Pay here: ${session.paymentLinkUrl}\n\n` : '') +
+            'Type *PAY* to get a new payment link, or *CANCEL* to cancel your order.'
+          );
+        }
         if (etaText) await wa.sendText(pid, token, to, `⏱ Estimated delivery: *${etaText}*`);
 
         // Track as payment_pending abandoned cart
@@ -3726,6 +3787,21 @@ const linkPhoneAndResumeOrder = async (phone, customer, conv, waAccount) => {
 
   // Payment — send interactive order_details checkout
   try {
+    // Same two-condition gate as _sendOrderCheckout (Tier-1). The order
+    // is already created; when checkout is disabled, send the standard
+    // payment-pending reminder text instead of a broken card. (Parity
+    // with the catch branch below — neither changes conversation state.)
+    if (!(await isCheckoutEnabled())) {
+      log.warn({ orderId: order.id }, 'linkPhoneAndResumeOrder checkout: checkout disabled — sending payment-pending text fallback');
+      const _orderNumber = order.display_order_id || order.order_number;
+      await wa.sendText(pid, token, to,
+        `💳 Your order #${_orderNumber || ''} is awaiting payment.\n\n` +
+        (session.paymentLinkUrl ? `Pay here: ${session.paymentLinkUrl}\n\n` : '') +
+        'Type *PAY* to get a new payment link, or *CANCEL* to cancel your order.'
+      );
+      if (etaText) await wa.sendText(pid, token, to, `⏱ Estimated delivery: *${etaText}*`);
+      return;
+    }
     await wa.sendPaymentRequest(pid, token, to, {
       order: fullOrder, items: fullOrder.items,
       customerName: customer.name,

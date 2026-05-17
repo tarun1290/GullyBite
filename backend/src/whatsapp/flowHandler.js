@@ -67,6 +67,18 @@ const STATE = Object.freeze({
 // for the ledger — this setTimeout just drives the WhatsApp UX.
 const LOYALTY_PROMPT_TIMEOUT_MS = 5 * 60 * 1000;
 
+// ─── CHECKOUT-ENABLED PREDICATE ───────────────────────────────
+// Single source of truth for "is in-WhatsApp interactive checkout
+// (order_details) allowed right now?". Mirrors the exact two-condition
+// Tier-1 gate used in src/webhooks/whatsapp.js (_sendOrderCheckout): the
+// Razorpay WhatsApp Pay configuration_name must be set in the
+// environment AND the platform_settings:checkout_order kill-switch must
+// be enabled. The order_details payloads in this file are built inline,
+// so this helper lets those sites apply the SAME gate. Returns a boolean.
+async function isCheckoutEnabled() {
+  return !!(process.env.RAZORPAY_WA_CONFIG_NAME && (await col('platform_settings').findOne({ _id: 'checkout_order' }))?.enabled);
+}
+
 // ─── TENANT RESOLUTION ────────────────────────────────────────
 // phone_number_id → (brand, restaurant). Brand.findByPhoneNumberId is
 // the primary path; whatsapp_accounts.phone_number_id is the fallback
@@ -632,6 +644,15 @@ async function _placeOrderAndRequestPayment(tenant, convo, customer, from, { dis
       unit_price_rs: li.unit_price_rs,
       menu_item_id: li.menu_item_id,
     }));
+    // Same two-condition Tier-1 gate as src/webhooks/whatsapp.js
+    // (_sendOrderCheckout). When in-WhatsApp checkout is disabled, SKIP
+    // the order_details send entirely and log clearly — per spec there
+    // is no text fallback here. Step 4 below still persists order ids /
+    // AWAIT_PAYMENT, and _handleAwaitPayment provides RESEND_PAYMENT_LINK
+    // and cancel hatches so the customer is never hard-stuck.
+    if (!(await isCheckoutEnabled())) {
+      log.warn({ orderId: order._id, orderNumber: order.order_number }, '_placeOrderAndRequestPayment: checkout disabled — skipping order_details send');
+    } else {
     try {
       await _send(tenant, from, (function buildPaymentRequestBody() {
         const toPaise = (rs) => Math.round((rs || 0) * 100);
@@ -684,6 +705,7 @@ async function _placeOrderAndRequestPayment(tenant, convo, customer, from, { dis
       await _send(tenant, from, _textBody(
         `Order #${order.order_number} placed for ₹${order.total_rs.toFixed(2)}.\n\nPayment ID: ${rzpOrder.id}\n\nWe'll confirm once payment is received.`
       ));
+    }
     }
 
     // 4. Persist order/rp_order ids on the conversation session so
@@ -781,6 +803,13 @@ async function _handleAwaitPayment(tenant, convo, customer, from, input) {
       return;
     }
 
+    // Same two-condition Tier-1 gate as src/webhooks/whatsapp.js
+    // (_sendOrderCheckout). When in-WhatsApp checkout is disabled, SKIP
+    // the order_details resend and log clearly — per spec there is no
+    // text fallback here. State is still set to AWAIT_PAYMENT below.
+    if (!(await isCheckoutEnabled())) {
+      log.warn({ orderId, orderNumber: order.order_number }, 'RESEND_PAYMENT_LINK: checkout disabled — skipping order_details send');
+    } else {
     try {
       const toPaise = (rs) => Math.round((rs || 0) * 100);
       const items = (order.items || []).map((li) => ({
@@ -831,6 +860,7 @@ async function _handleAwaitPayment(tenant, convo, customer, from, input) {
       await _send(tenant, from, _textBody(
         `New payment request created for order #${order.order_number}. Payment ID: ${rzpOrder.id}. Please complete payment to proceed.`
       ));
+    }
     }
     await _setState(convo._id, STATE.AWAIT_PAYMENT, {
       ...(convo.session_data || {}),
