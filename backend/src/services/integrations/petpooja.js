@@ -30,15 +30,24 @@ async function fetchMenu(integration) {
     log.info('fetchMenu skipped — POS integrations disabled');
     return { categories: [], items: [] };
   }
-  const { app_key, api_key, access_token, outlet_id } = integration;
-  const resolvedKey = app_key || api_key;
+  // Partner credentials come from the environment, not the integration
+  // row. Only outlet_id (Petpooja's restaurantid) stays per-branch.
+  const { outlet_id } = integration;
+  const app_key      = process.env.PETPOOJA_APP_KEY;
+  const access_token = process.env.PETPOOJA_ACCESS_TOKEN;
 
-  if (!resolvedKey || !access_token || !outlet_id) {
-    throw new Error('PetPooja: api_key, access_token and outlet_id are all required');
+  const missing = [];
+  if (!app_key)      missing.push('PETPOOJA_APP_KEY');
+  if (!access_token) missing.push('PETPOOJA_ACCESS_TOKEN');
+  if (missing.length) {
+    throw new Error(`Petpooja credentials missing from environment: ${missing.join(', ')}`);
+  }
+  if (!outlet_id) {
+    throw new Error('PetPooja: outlet_id is required');
   }
 
   const payload = {
-    app_key      : resolvedKey,
+    app_key      : app_key,
     access_token : access_token,
     restaurantid : outlet_id,
   };

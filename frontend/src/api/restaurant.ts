@@ -1345,9 +1345,6 @@ export interface Integration {
 }
 
 export interface IntegrationCredentials {
-  app_key?: string;
-  app_secret?: string;
-  access_token?: string;
   outlet_id?: string;
 }
 

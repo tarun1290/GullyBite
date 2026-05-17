@@ -5,7 +5,7 @@
 
 const express = require('express');
 const router  = express.Router();
-const { col, newId, mapId, mapIds } = require('../config/database');
+const { col, newId } = require('../config/database');
 const { requireAuth } = require('./auth');
 const { logActivity } = require('../services/activityLog');
 const { POS_INTEGRATIONS_ENABLED } = require('../config/features');
@@ -54,150 +54,6 @@ router.get('/', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// ─── POST /api/restaurant/integrations/:platform ──────────────
-// Save or update credentials for a platform
-router.post('/:platform', async (req, res) => {
-  if (!POS_INTEGRATIONS_ENABLED) return res.status(503).json(POS_503);
-  const { platform } = req.params;
-  if (!SERVICES[platform]) return res.status(400).json({ error: 'Unknown platform' });
-
-  const { apiKey, apiSecret, accessToken, outletId, branchId } = req.body;
-  if (!branchId) return res.status(400).json({ error: 'branchId is required' });
-
-  // Verify branch belongs to this restaurant
-  const branch = await col('branches').findOne({ _id: branchId, restaurant_id: req.restaurantId });
-  if (!branch) return res.status(403).json({ error: 'Branch not found' });
-
-  try {
-    const now = new Date();
-    const existing = await col('restaurant_integrations').findOne({
-      restaurant_id: req.restaurantId,
-      platform,
-    });
-
-    if (existing) {
-      const $set = { branch_id: branchId, updated_at: now };
-      if (apiKey      != null) $set.api_key      = apiKey;
-      if (apiSecret   != null) $set.api_secret   = apiSecret;
-      if (accessToken != null) $set.access_token = accessToken;
-      if (outletId    != null) $set.outlet_id    = outletId;
-
-      await col('restaurant_integrations').updateOne({ _id: existing._id }, { $set });
-      res.json({ success: true, integration: mapId({ ...existing, ...$set }) });
-    } else {
-      const doc = {
-        _id           : newId(),
-        restaurant_id : req.restaurantId,
-        platform,
-        branch_id     : branchId,
-        api_key       : apiKey       || null,
-        api_secret    : apiSecret    || null,
-        access_token  : accessToken  || null,
-        outlet_id     : outletId     || null,
-        is_active     : false,
-        sync_status   : 'idle',
-        sync_error    : null,
-        last_synced_at: null,
-        item_count    : 0,
-        last_sync_result : null,
-        created_at    : now,
-        updated_at    : now,
-      };
-      await col('restaurant_integrations').insertOne(doc);
-      res.json({ success: true, integration: mapId(doc) });
-    }
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-// ─── PATCH /api/restaurant/integrations/:platform/toggle ──────
-router.patch('/:platform/toggle', async (req, res) => {
-  if (!POS_INTEGRATIONS_ENABLED) return res.status(503).json(POS_503);
-  const { platform } = req.params;
-  const { isActive } = req.body;
-
-  try {
-    const integration = await col('restaurant_integrations').findOneAndUpdate(
-      { restaurant_id: req.restaurantId, platform },
-      { $set: { is_active: !!isActive, updated_at: new Date() } },
-      { returnDocument: 'after' }
-    );
-    if (!integration) return res.status(404).json({ error: 'Integration not configured yet' });
-
-    if (isActive && integration.branch_id) {
-      triggerSync(platform, integration._id, req.restaurantId, 'incremental').catch(() => {});
-    }
-
-    res.json({ success: true, isActive: integration.is_active });
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-// ─── POST /api/restaurant/integrations/:platform/sync ─────────
-// Manual sync trigger — supports sync_mode: "incremental" (default) or "full_replace"
-router.post('/:platform/sync', async (req, res) => {
-  if (!POS_INTEGRATIONS_ENABLED) return res.status(503).json(POS_503);
-  const { platform } = req.params;
-  const syncMode = req.body?.syncMode || 'incremental';
-  if (!SERVICES[platform]) return res.status(400).json({ error: 'Unknown platform' });
-
-  try {
-    const integration = await col('restaurant_integrations').findOne({
-      restaurant_id: req.restaurantId,
-      platform,
-    });
-    if (!integration) return res.status(404).json({ error: 'Integration not configured' });
-    if (!integration.is_active) return res.status(400).json({ error: 'Integration is disabled' });
-
-    const result = await triggerSync(platform, integration._id, req.restaurantId, syncMode);
-    res.json(result);
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-// ─── GET /api/restaurant/integrations/:platform/variants ──────
-// Preview variant mapping after last sync
-router.get('/:platform/variants', async (req, res) => {
-  const { platform } = req.params;
-  try {
-    const integration = await col('restaurant_integrations').findOne({
-      restaurant_id: req.restaurantId,
-      platform,
-    });
-    if (!integration) return res.status(404).json({ error: 'Integration not configured' });
-
-    const items = await col('menu_items').find({
-      branch_id: integration.branch_id,
-      pos_platform: platform,
-      item_group_id: { $ne: null },
-    }).sort({ item_group_id: 1, price_paise: 1 }).toArray();
-
-    // Group by item_group_id
-    const groups = {};
-    for (const item of items) {
-      const gid = item.item_group_id;
-      if (!groups[gid]) groups[gid] = { item_group_id: gid, name: item.name, pos_item_id: item.pos_item_id, variants: [] };
-      groups[gid].variants.push({
-        size: item.size,
-        price_paise: item.price_paise,
-        retailer_id: item.retailer_id,
-        is_available: item.is_available,
-      });
-    }
-
-    res.json({ variant_groups: Object.values(groups) });
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-// ─── DELETE /api/restaurant/integrations/:platform ────────────
-router.delete('/:platform', async (req, res) => {
-  if (!POS_INTEGRATIONS_ENABLED) return res.status(503).json(POS_503);
-  try {
-    await col('restaurant_integrations').deleteOne({
-      restaurant_id: req.restaurantId,
-      platform: req.params.platform,
-    });
-    res.json({ success: true });
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
 // ═══════════════════════════════════════════════════════════
 // PER-BRANCH ROUTES — restaurant-facing, branch-scoped.
 // Keyed by (restaurant_id, platform, branch_id) so a restaurant can
@@ -241,7 +97,9 @@ router.post('/:platform/:branchId', async (req, res) => {
     const branch = await _authBranch(req, res, branchId);
     if (!branch) return;
 
-    const { app_key, app_secret, access_token, outlet_id } = req.body || {};
+    // Partner credentials (app_key/app_secret/access_token) now come from
+    // the environment — only outlet_id is per-branch and accepted here.
+    const { outlet_id } = req.body || {};
     const now = new Date();
     const existing = await col('restaurant_integrations').findOne({
       restaurant_id: req.restaurantId, platform, branch_id: branchId,
@@ -249,9 +107,6 @@ router.post('/:platform/:branchId', async (req, res) => {
 
     if (existing) {
       const $set = { updated_at: now };
-      if (app_key      != null) $set.app_key      = app_key;
-      if (app_secret   != null) $set.app_secret   = app_secret;
-      if (access_token != null) $set.access_token = access_token;
       if (outlet_id    != null) $set.outlet_id    = outlet_id;
       await col('restaurant_integrations').updateOne({ _id: existing._id }, { $set });
       return res.json({ success: true, integration: toIntegrationView({ ...existing, ...$set }, branch.name) });
@@ -262,9 +117,6 @@ router.post('/:platform/:branchId', async (req, res) => {
       restaurant_id : req.restaurantId,
       platform,
       branch_id     : branchId,
-      app_key       : app_key      || null,
-      app_secret    : app_secret   || null,
-      access_token  : access_token || null,
       outlet_id     : outlet_id    || null,
       // Restaurant explicitly entered credentials → activate on insert.
       // The update path above intentionally omits is_active so a

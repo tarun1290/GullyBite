@@ -39,14 +39,25 @@ async function _findIntegration(branchId) {
   });
 }
 
-function _hasCredentials(integration) {
-  return !!(
-    integration
-    && integration.app_key
-    && integration.app_secret
-    && integration.access_token
-    && integration.outlet_id
-  );
+// Partner credentials now come from the environment, not the per-branch
+// integration row. Only outlet_id (Petpooja's restID) stays per-branch.
+// Throws naming exactly which env var(s) are missing/empty.
+function _envCredentials() {
+  const app_key      = process.env.PETPOOJA_APP_KEY;
+  const app_secret   = process.env.PETPOOJA_APP_SECRET;
+  const access_token = process.env.PETPOOJA_ACCESS_TOKEN;
+  const missing = [];
+  if (!app_key)      missing.push('PETPOOJA_APP_KEY');
+  if (!app_secret)   missing.push('PETPOOJA_APP_SECRET');
+  if (!access_token) missing.push('PETPOOJA_ACCESS_TOKEN');
+  if (missing.length) {
+    throw new Error(`Petpooja credentials missing from environment: ${missing.join(', ')}`);
+  }
+  return { app_key, app_secret, access_token };
+}
+
+function _hasOutlet(integration) {
+  return !!(integration && integration.outlet_id);
 }
 
 // ── Petpooja /save_order tax helpers ─────────────────────────
@@ -94,10 +105,12 @@ async function pushOrderToPos(orderId) {
     }
 
     const integration = await _findIntegration(order.branch_id);
-    if (!_hasCredentials(integration)) {
+    if (!_hasOutlet(integration)) {
       log.warn({ orderId, branchId: order.branch_id }, 'pushOrderToPos: no petpooja integration for branch');
       return;
     }
+
+    const creds = _envCredentials();
 
     const [customer, branch, menuItems] = await Promise.all([
       order.customer_id ? col('customers').findOne({ _id: order.customer_id }) : null,
@@ -161,9 +174,9 @@ async function pushOrderToPos(orderId) {
     const createdAtIso = createdAt.toISOString();
 
     const payload = {
-      app_key      : integration.app_key,
-      app_secret   : integration.app_secret,
-      access_token : integration.access_token,
+      app_key      : creds.app_key,
+      app_secret   : creds.app_secret,
+      access_token : creds.access_token,
       restID       : integration.outlet_id,
       device_type  : 'Web',
       callback_url : callbackUrl,
@@ -265,15 +278,17 @@ async function cancelOrderOnPos(orderId, reason) {
     }
 
     const integration = await _findIntegration(order.branch_id);
-    if (!_hasCredentials(integration)) {
+    if (!_hasOutlet(integration)) {
       log.warn({ orderId, branchId: order.branch_id }, 'cancelOrderOnPos: no petpooja integration for branch');
       return;
     }
 
+    const creds = _envCredentials();
+
     const payload = {
-      app_key      : integration.app_key,
-      app_secret   : integration.app_secret,
-      access_token : integration.access_token,
+      app_key      : creds.app_key,
+      app_secret   : creds.app_secret,
+      access_token : creds.access_token,
       restID       : integration.outlet_id,
       clientorderID: order.order_number,
       orderID      : '',

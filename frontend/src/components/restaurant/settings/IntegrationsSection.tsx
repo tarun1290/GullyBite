@@ -62,12 +62,9 @@ function formatDate(v: string | null): string {
 
 interface CredsForm {
   outlet_id: string;
-  app_key: string;
-  app_secret: string;
-  access_token: string;
 }
 
-const EMPTY_FORM: CredsForm = { outlet_id: '', app_key: '', app_secret: '', access_token: '' };
+const EMPTY_FORM: CredsForm = { outlet_id: '' };
 
 export default function IntegrationsSection() {
   const { showToast } = useToast();
@@ -143,9 +140,6 @@ export default function IntegrationsSection() {
     try {
       await upsertIntegration(PLATFORM, modalBranch.id, {
         outlet_id: form.outlet_id.trim(),
-        app_key: form.app_key.trim(),
-        app_secret: form.app_secret.trim(),
-        access_token: form.access_token.trim(),
       });
       closeModal();
       await refetchIntegrations();
@@ -322,7 +316,7 @@ export default function IntegrationsSection() {
             </div>
             <div className="cb">
               <p className="text-dim text-xs mt-0 mb-4">
-                Credentials are sent securely to the server and never stored in your browser.
+                Find your outlet ID in your Petpooja dashboard under Settings → Integration code (e.g., n6awxebz)
               </p>
 
               <div className="mb-3">
@@ -334,50 +328,6 @@ export default function IntegrationsSection() {
                   className="inp"
                   value={form.outlet_id}
                   onChange={(e) => setForm((f) => ({ ...f, outlet_id: e.target.value }))}
-                  autoComplete="off"
-                  required
-                />
-              </div>
-
-              <div className="mb-3">
-                <label htmlFor="int-appkey" className="block text-sm text-tx mb-1">
-                  App Key
-                </label>
-                <input
-                  id="int-appkey"
-                  className="inp"
-                  value={form.app_key}
-                  onChange={(e) => setForm((f) => ({ ...f, app_key: e.target.value }))}
-                  autoComplete="off"
-                  required
-                />
-              </div>
-
-              <div className="mb-3">
-                <label htmlFor="int-appsecret" className="block text-sm text-tx mb-1">
-                  App Secret
-                </label>
-                <input
-                  id="int-appsecret"
-                  type="password"
-                  className="inp"
-                  value={form.app_secret}
-                  onChange={(e) => setForm((f) => ({ ...f, app_secret: e.target.value }))}
-                  autoComplete="off"
-                  required
-                />
-              </div>
-
-              <div className="mb-3">
-                <label htmlFor="int-token" className="block text-sm text-tx mb-1">
-                  Access Token
-                </label>
-                <input
-                  id="int-token"
-                  type="password"
-                  className="inp"
-                  value={form.access_token}
-                  onChange={(e) => setForm((f) => ({ ...f, access_token: e.target.value }))}
                   autoComplete="off"
                   required
                 />

@@ -27,13 +27,6 @@ const log = require('../utils/logger').child({ component: 'PetpoojaIntegration' 
 
 const requireAdmin = requireAdminAuth();
 
-// ─── HELPERS ────────────────────────────────────────────────
-function maskSecret(secret) {
-  if (typeof secret !== 'string' || secret.length === 0) return secret;
-  if (secret.length <= 4) return '****';
-  return `${secret.slice(0, 4)}****`;
-}
-
 // ═══════════════════════════════════════════════════════════
 // SECTION A: ADMIN CRUD
 // ═══════════════════════════════════════════════════════════
@@ -51,10 +44,10 @@ router.get('/branches/:branchId/integration', requireAdmin, async (req, res) => 
     if (!integration) {
       return res.status(404).json({ error: 'No Petpooja integration for this branch' });
     }
-    return res.json({
-      ...integration,
-      app_secret: maskSecret(integration.app_secret),
-    });
+    // Partner credentials live in the environment now — never echo them
+    // back even if legacy rows still carry the fields.
+    const { app_key, app_secret, access_token, ...safe } = integration;
+    return res.json(safe);
   } catch (err) {
     log.error({ err: err?.message, branchId: req.params.branchId }, 'GET integration failed');
     return res.status(500).json({ error: 'Failed to load integration' });
@@ -68,9 +61,11 @@ router.get('/branches/:branchId/integration', requireAdmin, async (req, res) => 
 router.post('/branches/:branchId/integration', requireAdmin, express.json(), async (req, res) => {
   try {
     const { branchId } = req.params;
-    const { app_key, app_secret, access_token, outlet_id } = req.body || {};
+    const { outlet_id } = req.body || {};
 
-    const fields = { app_key, app_secret, access_token, outlet_id };
+    // Partner credentials live in the environment now — only outlet_id
+    // is stored per-branch and required here.
+    const fields = { outlet_id };
     for (const [name, value] of Object.entries(fields)) {
       if (typeof value !== 'string' || !value.trim()) {
         return res.status(400).json({ error: `${name} is required` });
@@ -87,9 +82,6 @@ router.post('/branches/:branchId/integration', requireAdmin, express.json(), asy
       { platform: 'petpooja', branch_id: branchId },
       {
         $set: {
-          app_key: app_key.trim(),
-          app_secret: app_secret.trim(),
-          access_token: access_token.trim(),
           outlet_id: outlet_id.trim(),
           platform: 'petpooja',
           branch_id: branchId,
