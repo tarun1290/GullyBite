@@ -71,6 +71,34 @@ async function _authBranch(req, res, branchId) {
   return branch;
 }
 
+// Fire-and-forget refresh of Petpooja's per-restaurant Custom
+// Configuration (packaging charges) onto the integration row's
+// pos_config. STRICTLY NON-FATAL: every failure path is swallowed so
+// it can never block or break connect/sync. fetchRestaurantConfig is
+// itself non-throwing (returns null on any error); we still guard with
+// .catch(()=>{}) and a try/catch for total isolation. Re-fetched on
+// both connect and sync because the config can change over time.
+function _refreshPetpoojaConfig(restaurantId, platform, branchId, outletId) {
+  try {
+    if (!outletId) return;
+    // Lazy require — same defensive style this file uses for
+    // imageUpload/catalog so a load issue can't break route wiring.
+    const petpooja = require('../services/integrations/petpooja');
+    Promise.resolve()
+      .then(() => petpooja.fetchRestaurantConfig(outletId))
+      .then((result) => {
+        if (!result) return; // null = fetch failed / disabled — keep existing behavior
+        // Reuse the SAME collection + filter every other handler in
+        // this file uses to locate the integration row.
+        return col('restaurant_integrations').updateOne(
+          { restaurant_id: restaurantId, platform, branch_id: branchId },
+          { $set: { pos_config: result, updated_at: new Date() } },
+        );
+      })
+      .catch(() => {});
+  } catch (_e) { /* never throw — non-fatal */ }
+}
+
 // ─── GET /:platform/:branchId — integration for one branch ────
 router.get('/:platform/:branchId', async (req, res, next) => {
   const { platform, branchId } = req.params;
@@ -109,6 +137,12 @@ router.post('/:platform/:branchId', async (req, res, next) => {
       const $set = { updated_at: now };
       if (outlet_id    != null) $set.outlet_id    = outlet_id;
       await col('restaurant_integrations').updateOne({ _id: existing._id }, { $set });
+      // Fire-and-forget: refresh Petpooja per-restaurant Custom
+      // Configuration (packaging charges) onto pos_config. NON-FATAL —
+      // a failed fetch must never block/break the connect response.
+      if (platform === 'petpooja') {
+        _refreshPetpoojaConfig(req.restaurantId, platform, branchId, outlet_id != null ? outlet_id : existing.outlet_id);
+      }
       return res.json({ success: true, integration: toIntegrationView({ ...existing, ...$set }, branch.name) });
     }
 
@@ -131,6 +165,12 @@ router.post('/:platform/:branchId', async (req, res, next) => {
       updated_at    : now,
     };
     await col('restaurant_integrations').insertOne(doc);
+    // Fire-and-forget: pull Petpooja per-restaurant Custom Configuration
+    // (packaging charges) onto pos_config. NON-FATAL — must never block
+    // or break the connect response if the fetch fails.
+    if (platform === 'petpooja') {
+      _refreshPetpoojaConfig(req.restaurantId, platform, branchId, doc.outlet_id);
+    }
     res.json({ success: true, integration: toIntegrationView(doc, branch.name) });
   } catch (e) { return next(e); }
 });
@@ -170,6 +210,13 @@ router.post('/:platform/:branchId/sync', async (req, res, next) => {
     });
     if (!integration) return res.status(404).json({ error: 'Integration not configured for this branch' });
     if (!integration.is_active) return res.status(400).json({ error: 'Integration is disabled' });
+
+    // Fire-and-forget: re-pull Petpooja Custom Configuration on every
+    // manual sync — packaging charges can change over time. NON-FATAL,
+    // must never block or fail the sync response.
+    if (platform === 'petpooja') {
+      _refreshPetpoojaConfig(req.restaurantId, platform, branchId, integration.outlet_id);
+    }
 
     const result = await triggerSync(platform, integration._id, req.restaurantId, syncMode);
     res.json(result);

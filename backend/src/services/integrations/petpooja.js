@@ -242,6 +242,119 @@ function parsePushMenuPayload(payload) {
   return { categories, items };
 }
 
+// ─── RESTAURANT CUSTOM CONFIGURATION (packaging charges) ─────
+// Fetches Petpooja's per-restaurant Custom Configuration so order
+// pushes can apply the restaurant's configured packing charge.
+//
+// ⚠️ TODO/ASSUMPTION: confirm against Petpooja API docs — path +
+//    response field names UNVERIFIED. The exact custom-config
+//    endpoint path and its response schema are NOT documented
+//    anywhere in this codebase and could NOT be confirmed. The path
+//    constant below is the most plausible guess consistent with
+//    fetchMenu's `${BASE}/get...` convention; the field mapping below
+//    is a defensive best-effort over several likely snake/camel
+//    variants. DO NOT treat as verified.
+const CUSTOM_CONFIG_PATH = `${BASE}/getCustomConfig`;
+
+async function fetchRestaurantConfig(outletId) {
+  // NON-FATAL by contract: any failure (gate off, missing creds,
+  // network, non-200, unexpected shape) → log.warn + return null.
+  // Callers fall back to existing behavior. Never throws.
+  try {
+    if (!POS_INTEGRATIONS_ENABLED) {
+      log.info('fetchRestaurantConfig skipped — POS integrations disabled');
+      return null;
+    }
+
+    const app_key      = process.env.PETPOOJA_APP_KEY;
+    const access_token = process.env.PETPOOJA_ACCESS_TOKEN;
+
+    const missing = [];
+    if (!app_key)      missing.push('PETPOOJA_APP_KEY');
+    if (!access_token) missing.push('PETPOOJA_ACCESS_TOKEN');
+    if (missing.length) {
+      log.warn({ missing }, 'fetchRestaurantConfig: Petpooja credentials missing from environment');
+      return null;
+    }
+    if (!outletId) {
+      log.warn('fetchRestaurantConfig: outletId is required');
+      return null;
+    }
+
+    const payload = {
+      app_key      : app_key,
+      access_token : access_token,
+      restaurantid : outletId,
+    };
+
+    const res = await axios.post(CUSTOM_CONFIG_PATH, payload, {
+      timeout: TIMEOUT,
+    });
+
+    // ⚠️ ASSUMPTION (UNVERIFIED): the custom-config block could live at
+    //    the response root or nested under a `config` / `customConfig` /
+    //    `restaurant_config` / `details` key. Probe the likely spots,
+    //    then pull the four packaging fields trying snake_case and
+    //    camelCase variants. Coerce: boolean for apply flag, number for
+    //    value. `packaging_applicable_on` / `packaging_charge_type` are
+    //    passed through as-is (Petpooja uses 'F'/'P' for type).
+    const data = res?.data || {};
+    const c =
+      data.custom_config || data.customConfig ||
+      data.config || data.restaurant_config || data.restaurantConfig ||
+      data.details || data.data || data;
+
+    const pick = (...keys) => {
+      for (const k of keys) {
+        if (c && c[k] !== undefined && c[k] !== null) return c[k];
+      }
+      return undefined;
+    };
+
+    const rawApply = pick(
+      'apply_packaging_charge', 'applyPackagingCharge',
+      'enable_packaging_charge', 'packaging_charge_applicable',
+      'packagingChargeApplicable',
+    );
+    const applyPackagingCharge =
+      rawApply === true || rawApply === 1 ||
+      rawApply === '1' || rawApply === 'true' ||
+      rawApply === 'Y' || rawApply === 'yes';
+
+    const rawValue = pick(
+      'packaging_charge_value', 'packagingChargeValue',
+      'packaging_charge', 'packagingCharge',
+      'packaging_charge_amount', 'packagingChargeAmount',
+    );
+    const valNum = Number(rawValue);
+    const packagingChargeValue = Number.isFinite(valNum) ? valNum : 0;
+
+    const result = {
+      packaging_applicable_on: pick(
+        'packaging_applicable_on', 'packagingApplicableOn',
+        'packaging_charge_on', 'packagingChargeOn',
+      ) ?? null,
+      packaging_charge_type: pick(
+        'packaging_charge_type', 'packagingChargeType',
+        'packaging_charge_type_value',
+      ) ?? null,
+      packaging_charge_value: packagingChargeValue,
+      apply_packaging_charge: applyPackagingCharge,
+    };
+
+    log.info({ outletId, result }, 'fetchRestaurantConfig: custom config fetched');
+    return result;
+  } catch (err) {
+    log.warn({
+      outletId,
+      errMessage: err?.message || String(err),
+      upstreamStatus: err?.response?.status,
+      upstreamBody: err?.response?.data,
+    }, 'fetchRestaurantConfig: failed (non-fatal, returning null)');
+    return null;
+  }
+}
+
 // ─── WEBHOOK PARSERS ─────────────────────────────────────
 function parseWebhookEvent(payload) {
   try {
@@ -295,4 +408,4 @@ function parseStockUpdate(payload) {
   }
 }
 
-module.exports = { fetchMenu, parseWebhookEvent, parseStockUpdate, parsePushMenuPayload };
+module.exports = { fetchMenu, fetchRestaurantConfig, parseWebhookEvent, parseStockUpdate, parsePushMenuPayload };

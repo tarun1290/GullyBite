@@ -1342,6 +1342,12 @@ export interface Integration {
   last_sync_result: unknown | null;
   item_count: number;
   created_at: string | null;
+  pos_config?: {
+    apply_packaging_charge?: boolean;
+    packaging_applicable_on?: string;
+    packaging_charge_type?: string;
+    packaging_charge_value?: number;
+  } | null;
 }
 
 export interface IntegrationCredentials {

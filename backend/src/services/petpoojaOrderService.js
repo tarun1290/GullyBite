@@ -112,6 +112,47 @@ async function pushOrderToPos(orderId) {
 
     const creds = _envCredentials();
 
+    // ── Petpooja per-restaurant Custom Configuration: packing charge ──
+    // pos_config is populated (best-effort) by the integrations connect/
+    // sync handlers from Petpooja's custom-config endpoint. Apply it as
+    // the order's packing charge ONLY when the config exists AND its
+    // apply flag is truthy. STRICTLY GUARDED: any missing/malformed
+    // pos_config falls back to the existing behavior (no packing-charge
+    // field added, exactly as before) — never throws on bad config.
+    let packingChargeRs = null; // null ⇒ leave existing behavior untouched
+    try {
+      const cfg = integration && integration.pos_config;
+      if (cfg && cfg.apply_packaging_charge) {
+        const type = cfg.packaging_charge_type;
+        const value = Number(cfg.packaging_charge_value);
+        if (Number.isFinite(value) && value >= 0) {
+          if (type === 'F') {
+            // Fixed amount.
+            packingChargeRs = value;
+          } else if (type === 'P') {
+            // Percentage of the order base. Reuse the same pre-tax base
+            // the existing tax helpers (computeTax/buildOrderTax) use:
+            // order.subtotal_rs. Fall back to total_rs only if subtotal
+            // is absent. Match the Order block's .toFixed(2) precision.
+            const baseRs = Number(
+              order.subtotal_rs != null ? order.subtotal_rs : order.total_rs,
+            );
+            if (Number.isFinite(baseRs) && baseRs >= 0) {
+              packingChargeRs = (baseRs * value) / 100;
+            }
+          }
+          // Unknown type ⇒ packingChargeRs stays null ⇒ fallback.
+        }
+      }
+    } catch (cfgErr) {
+      // Never let pos_config handling break the push — fall back.
+      log.warn({
+        orderId,
+        errMessage: cfgErr?.message || String(cfgErr),
+      }, 'pushOrderToPos: pos_config packing-charge calc failed (ignored, using existing behavior)');
+      packingChargeRs = null;
+    }
+
     const [customer, branch, menuItems] = await Promise.all([
       order.customer_id ? col('customers').findOne({ _id: order.customer_id }) : null,
       order.branch_id ? col('branches').findOne({ _id: order.branch_id }) : null,
@@ -209,6 +250,13 @@ async function pushOrderToPos(orderId) {
           delivery_charges : (order.delivery_fee_rs || 0).toFixed(2),
           enable_delivery  : '0',
           callback_url     : callbackUrl,
+          // Packing charge from Petpooja Custom Configuration (pos_config).
+          // Only present when pos_config exists AND its apply flag is
+          // truthy; otherwise this spread is empty and the payload is
+          // byte-identical to the previous (no packing-charge) behavior.
+          ...(packingChargeRs != null
+            ? { packing_charges: Number(packingChargeRs).toFixed(2) }
+            : {}),
         },
         OrderItem: orderItems,
         Tax      : buildOrderTax(order),

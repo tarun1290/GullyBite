@@ -114,6 +114,11 @@ router.post('/:platform', async (req, res) => {
     return;
   }
 
+  // Declared at handler scope (mirrors whatsapp.js:322 `let logId = null;`) so the
+  // menu_update promise-chain callbacks (.then/.catch on upsertMenu/triggerSync),
+  // which run AFTER the synchronous try block exits, can still see the log id.
+  let logId = null;
+
   try {
     // Parse the event
     const event = svc.parseWebhookEvent(payload);
@@ -126,15 +131,22 @@ router.post('/:platform', async (req, res) => {
     const isNew = await once('pos', posKey, { platform, type: event.type });
     if (!isNew) return;
 
-    // Log to webhook_logs
+    // Log to webhook_logs. Capture the generated id first so terminal paths can
+    // mark this row processed/errored (mirrors whatsapp.js logWebhook → logId).
+    // Insert stays fire-and-forget exactly as before.
+    logId = newId();
     col('webhook_logs').insertOne({
-      _id: newId(), source: 'pos', platform, event_type: event.type,
+      _id: logId, source: 'pos', platform, event_type: event.type,
       outlet_id: event.outletId, payload: JSON.stringify(payload).substring(0, 5000),
       received_at: new Date(), signature_verified: signatureVerified,
     }).catch(() => {});
 
     if (event.type === 'unknown') {
       log.info({ platform }, 'Unrecognized event — logged for debugging');
+      // Benign no-op terminal: the event WAS received and accepted; logging it
+      // for debugging IS the intended handling. Mark processed so it does not
+      // stay Pending forever (mirrors whatsapp.js success $set shape).
+      if (logId) col('webhook_logs').updateOne({ _id: logId }, { $set: { processed: true, processed_at: new Date(), retry_status: 'success' } }).catch(() => {});
       return;
     }
 
@@ -144,6 +156,9 @@ router.post('/:platform', async (req, res) => {
     });
     if (!integration) {
       log.warn({ platform, outletId: event.outletId }, 'No active integration for outlet');
+      // Benign no-op terminal: event accepted but no integration to route it to —
+      // nothing further to do. Mark processed so it does not stay Pending forever.
+      if (logId) col('webhook_logs').updateOne({ _id: logId }, { $set: { processed: true, processed_at: new Date(), retry_status: 'success' } }).catch(() => {});
       return;
     }
 
@@ -182,6 +197,10 @@ router.post('/:platform', async (req, res) => {
       }
 
       log.info({ platform, changedCount, branchId }, 'Stock update processed');
+
+      // Genuine completion of the awaited stock_update path — mark processed
+      // (mirrors whatsapp.js success $set shape; fire-and-forget).
+      if (logId) col('webhook_logs').updateOne({ _id: logId }, { $set: { processed: true, processed_at: new Date(), retry_status: 'success' } }).catch(() => {});
     }
 
     // ── MENU UPDATE — full re-pull ──
@@ -194,21 +213,43 @@ router.post('/:platform', async (req, res) => {
         upsertMenu(branchId, platform, parsed, 'incremental')
           .then(result => {
             log.info({ platform, branchId, ...result }, 'Push Menu upserted directly');
+            // Genuine completion of the push-menu path — mark processed
+            // (mirrors whatsapp.js success $set shape; fire-and-forget).
+            if (logId) col('webhook_logs').updateOne({ _id: logId }, { $set: { processed: true, processed_at: new Date(), retry_status: 'success' } }).catch(() => {});
             // Fire catalog chain
             const catalog = require('../services/catalog');
             memcache.del(`branch:${branchId}:menu`);
             catalog.syncBranchCatalog(branchId)
               .catch(err => log.error({ err }, 'Catalog sync failed after push menu'));
           })
-          .catch(err => log.error({ err }, 'Push Menu upsert failed'));
+          .catch(err => {
+            log.error({ err }, 'Push Menu upsert failed');
+            // Error terminal for the push-menu path — mark for retry
+            // (mirrors whatsapp.js error $set shape; fire-and-forget).
+            if (logId) col('webhook_logs').updateOne({ _id: logId }, { $set: { error_message: err.message, retry_status: 'pending' } }).catch(() => {});
+          });
       } else {
         triggerSync(platform, String(integration._id), restaurantId, 'incremental')
-          .catch(err => log.error({ err }, 'Menu sync failed'));
+          .then(() => {
+            // Genuine completion of the API-sync path — mark processed
+            // (mirrors whatsapp.js success $set shape; fire-and-forget).
+            if (logId) col('webhook_logs').updateOne({ _id: logId }, { $set: { processed: true, processed_at: new Date(), retry_status: 'success' } }).catch(() => {});
+          })
+          .catch(err => {
+            log.error({ err }, 'Menu sync failed');
+            // Error terminal for the API-sync path — mark for retry
+            // (mirrors whatsapp.js error $set shape; fire-and-forget).
+            if (logId) col('webhook_logs').updateOne({ _id: logId }, { $set: { error_message: err.message, retry_status: 'pending' } }).catch(() => {});
+          });
       }
     }
 
   } catch (err) {
     log.error({ err, platform }, 'Error processing webhook');
+    // Surrounding-catch error terminal — mark for retry (mirrors whatsapp.js
+    // catch-block error $set shape; fire-and-forget; logId may be null if the
+    // failure happened before the insert, hence the guard).
+    if (logId) col('webhook_logs').updateOne({ _id: logId }, { $set: { error_message: err.message, retry_status: 'pending' } }).catch(() => {});
   }
 });
 

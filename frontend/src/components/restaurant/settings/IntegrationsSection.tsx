@@ -60,6 +60,22 @@ function formatDate(v: string | null): string {
   return Number.isNaN(d.getTime()) ? 'Never' : d.toLocaleString();
 }
 
+// Read-only display mappers for Petpooja pos_config (fetched/stored by
+// the backend on connect/sync — see services/integrations/petpooja.js).
+function packagingApplicableLabel(v: string | undefined): string {
+  if (!v) return 'None';
+  const s = v.toLowerCase();
+  if (s.includes('order')) return 'Order';
+  if (s.includes('item')) return 'Item';
+  return 'None';
+}
+
+function packagingTypeLabel(v: string | undefined): string {
+  if (v === 'F') return 'Fixed';
+  if (v === 'P') return 'Percentage';
+  return '—';
+}
+
 interface CredsForm {
   outlet_id: string;
 }
@@ -251,6 +267,48 @@ export default function IntegrationsSection() {
                         <dt className="text-dim">Items</dt>
                         <dd className="text-tx m-0">{integration.item_count ?? 0}</dd>
                       </dl>
+
+                      {/* Petpooja Configuration — read-only; populated by
+                          the backend pos_config, refreshed via Sync Now. */}
+                      <div className="mt-4 rounded-md border border-rim p-3">
+                        <h4 className="text-tx text-sm font-semibold m-0 mb-2">
+                          Petpooja Configuration
+                        </h4>
+                        {integration.pos_config ? (
+                          <dl className="grid grid-cols-2 gap-y-2 gap-x-3 text-sm m-0">
+                            <dt className="text-dim">Packaging Charge</dt>
+                            <dd className="text-tx m-0">
+                              {integration.pos_config.apply_packaging_charge ? 'Yes' : 'No'}
+                            </dd>
+
+                            <dt className="text-dim">Applicable On</dt>
+                            <dd className="text-tx m-0">
+                              {packagingApplicableLabel(integration.pos_config.packaging_applicable_on)}
+                            </dd>
+
+                            <dt className="text-dim">Type</dt>
+                            <dd className="text-tx m-0">
+                              {packagingTypeLabel(integration.pos_config.packaging_charge_type)}
+                            </dd>
+
+                            {integration.pos_config.apply_packaging_charge ? (
+                              <>
+                                <dt className="text-dim">Value</dt>
+                                <dd className="text-tx m-0">
+                                  ₹{integration.pos_config.packaging_charge_value ?? 0}
+                                </dd>
+                              </>
+                            ) : null}
+                          </dl>
+                        ) : (
+                          <p className="text-dim text-sm m-0">
+                            Configuration not yet fetched — click Sync Now to load.
+                          </p>
+                        )}
+                        <p className="text-dim text-xs mt-3 mb-0">
+                          Source: Petpooja. Update in Petpooja dashboard, then Sync Now to refresh.
+                        </p>
+                      </div>
 
                       <div className="flex flex-wrap gap-2 mt-4">
                         <button
