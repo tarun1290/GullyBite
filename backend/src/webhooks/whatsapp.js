@@ -264,7 +264,24 @@ router.get('/', (req, res) => {
   const token = req.query['hub.verify_token'];
   const challenge = req.query['hub.challenge'];
 
-  if (mode === 'subscribe' && token === process.env.WEBHOOK_VERIFY_TOKEN) {
+  // Constant-time verify-token comparison. Mirrors the POST
+  // X-Hub-Signature-256 idiom below (this file, ~line 309-312):
+  // Buffer.from() both sides → Buffer.byteLength length guard →
+  // crypto.timingSafeEqual (throws on unequal length, so the guard
+  // runs first). Fail closed: unset/empty expected token, missing
+  // provided token, or any mismatch → 403, never echo hub.challenge.
+  const expectedVerifyToken = process.env.WEBHOOK_VERIFY_TOKEN;
+  if (!expectedVerifyToken || !token) {
+    req.log.error('Webhook verification failed. Check WEBHOOK_VERIFY_TOKEN in .env');
+    return res.sendStatus(403);
+  }
+  const provBuf = Buffer.from(token);
+  const expBuf = Buffer.from(expectedVerifyToken);
+  // timingSafeEqual throws on unequal-length buffers — guard first
+  const tokenOk =
+    Buffer.byteLength(token) === Buffer.byteLength(expectedVerifyToken) &&
+    crypto.timingSafeEqual(provBuf, expBuf);
+  if (mode === 'subscribe' && tokenOk) {
     req.log.info('Meta webhook verified');
     return res.status(200).send(challenge);
   }
@@ -840,7 +857,7 @@ const handleMessage = async (msg, senderIdentifiers, senderName, waAccount) => {
 // When checkout template succeeds, creates the order so Razorpay webhook can match it.
 const _sendOrderCheckout = async (pid, token, to, { orderNumber, items, charges, subtotal, deliveryFee, total, discount, dynamicNote, session, customer, waAccount }) => {
   // Try interactive order_details checkout (Razorpay in-WhatsApp payment)
-  const checkoutEnabled = !!(process.env.RAZORPAY_WA_CONFIG_NAME || (await col('platform_settings').findOne({ _id: 'checkout_order' }))?.enabled);
+  const checkoutEnabled = !!(process.env.RAZORPAY_WA_CONFIG_NAME && (await col('platform_settings').findOne({ _id: 'checkout_order' }))?.enabled);
   if (checkoutEnabled && session?.branchId && session?.cart?.length) {
     try {
       const branch = await col('branches').findOne({ _id: session.branchId });

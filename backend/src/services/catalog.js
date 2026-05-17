@@ -117,18 +117,33 @@ const ensureMainCatalog = async (restaurantId) => {
       await axios.get(`${GRAPH}/${restaurant.meta_catalog_id}`, {
         params: { access_token: token, fields: 'id' }, timeout: 8000,
       });
-      log.info({ catalogId: restaurant.meta_catalog_id }, 'ensureMainCatalog: using stored catalog (verified on Meta)');
-      return { catalogId: restaurant.meta_catalog_id, alreadyExists: true };
+      // verified:true — the verify-GET actually succeeded against Meta.
+      log.info({ catalogId: restaurant.meta_catalog_id }, 'ensureMainCatalog: using stored catalog (Meta GET ok)');
+      return { catalogId: restaurant.meta_catalog_id, alreadyExists: true, verified: true };
     } catch (checkErr) {
-      const code = checkErr.response?.status;
-      if (code === 400 || code === 404) {
-        log.warn({ catalogId: restaurant.meta_catalog_id, httpStatus: code }, 'Stored catalog no longer exists on Meta — clearing and rediscovering');
+      const httpStatus = checkErr.response?.status;
+      // Meta returns "Object … does not exist, cannot be loaded due to
+      // missing permissions" as HTTP 500 with error.code === 100. Treat
+      // that IDENTICALLY to a 400/404 (stale id → clear + rediscover).
+      // Defensive optional chaining: a missing response/data/error must
+      // never throw here.
+      const metaErrCode = checkErr.response?.data?.error?.code;
+      const isStaleCatalog =
+        httpStatus === 400 ||
+        httpStatus === 404 ||
+        (httpStatus === 500 && metaErrCode === 100);
+      if (isStaleCatalog) {
+        log.warn({ catalogId: restaurant.meta_catalog_id, httpStatus, metaErrCode }, 'Stored catalog no longer exists on Meta — clearing and rediscovering');
         await col('restaurants').updateOne({ _id: restaurantId }, { $unset: { meta_catalog_id: '', meta_catalog_name: '', catalog_created_at: '' } });
         await col('branches').updateMany({ restaurant_id: restaurantId }, { $unset: { catalog_id: '' } });
       } else {
-        // Network error or timeout — trust the stored ID
+        // Network error / timeout / other unexpected error — trust the
+        // stored ID, but flag verified:false so downstream product-set
+        // and collection creates can be skipped instead of issuing
+        // known-dead requests against an unconfirmed catalog id.
+        log.warn({ status: httpStatus, code: metaErrCode }, 'ensureMainCatalog: catalog verify returned unexpected error, trusting stored id');
         log.warn({ err: checkErr, catalogId: restaurant.meta_catalog_id }, 'Could not verify catalog — using stored ID');
-        return { catalogId: restaurant.meta_catalog_id, alreadyExists: true };
+        return { catalogId: restaurant.meta_catalog_id, alreadyExists: true, verified: false };
       }
     }
   }
@@ -165,7 +180,8 @@ const ensureMainCatalog = async (restaurantId) => {
         $set: { meta_catalog_id: wa_acc.catalog_id, meta_catalog_name: valid.name || `${restaurant.business_name} Menu`, catalog_created_at: new Date() }
       });
       log.info({ businessName: restaurant.business_name, catalogId: wa_acc.catalog_id }, 'Restaurant inherited WABA catalog');
-      return { catalogId: wa_acc.catalog_id, inherited: true };
+      // verified:true — _validateCatalog() above did a successful GET.
+      return { catalogId: wa_acc.catalog_id, inherited: true, verified: true };
     }
   }
 
@@ -190,7 +206,8 @@ const ensureMainCatalog = async (restaurantId) => {
             { $set: { catalog_id: chosen.id, catalog_linked: true, catalog_linked_at: new Date() } }
           );
           log.info({ catalogId: chosen.id, businessName: restaurant.business_name }, 'ensureMainCatalog: using discovered catalog from WABA');
-          return { catalogId: chosen.id, inherited: true };
+          // verified:true — _validateCatalog() above did a successful GET.
+          return { catalogId: chosen.id, inherited: true, verified: true };
         }
       }
     } catch (e) {
@@ -290,7 +307,9 @@ const ensureMainCatalog = async (restaurantId) => {
     }
   }
 
-  return { success: true, catalogId };
+  // verified:true — catalog was either freshly created on Meta or
+  // discovered+validated via _validateCatalog() (a successful GET).
+  return { success: true, catalogId, verified: true };
 };
 
 // ─── ENSURE BRANCH PRODUCT SET WITHIN MAIN CATALOG ──────────
@@ -498,6 +517,13 @@ function _buildItemRequest(item, restaurant, branch) {
   const validation = validateItemForMeta(item);
   if (!validation.valid) {
     log.warn({ itemName: item.name, retailerId: item.retailer_id, errors: validation.errors }, 'Item failed validation');
+    // Persist the validation failure onto the menu_items doc so it can be
+    // surfaced to restaurants. Fire-and-forget — additive, must NOT alter
+    // sync behaviour, ordering, or this function's (sync) return value.
+    col('menu_items').updateOne(
+      { retailer_id: item.retailer_id },
+      { $set: { catalog_sync_error: validation.errors[0], catalog_sync_failed_at: new Date() } }
+    ).catch(() => {});
     // Still attempt to sync — Meta may accept with auto-fixes from mapMenuItemToMetaProduct
   }
 
@@ -787,7 +813,11 @@ const _syncBranchCatalogLocked = async (branchId) => {
         if (syncedIds.length) {
           await col('menu_items').updateMany(
             { _id: { $in: syncedIds } },
-            { $set: { catalog_sync_status: 'synced', catalog_synced_at: new Date() } }
+            {
+              $set:   { catalog_sync_status: 'synced', catalog_synced_at: new Date() },
+              // Self-clear any prior validation failure once the item syncs OK.
+              $unset: { catalog_sync_error: '', catalog_sync_failed_at: '' },
+            }
           );
         }
       } catch (err) {
@@ -994,7 +1024,11 @@ const addProduct = async (menuItemId) => {
     });
     await col('menu_items').updateOne(
       { _id: menuItemId },
-      { $set: { catalog_sync_status: 'synced', catalog_synced_at: new Date() } }
+      {
+        $set:   { catalog_sync_status: 'synced', catalog_synced_at: new Date() },
+        // Self-clear any prior validation failure once the item syncs OK.
+        $unset: { catalog_sync_error: '', catalog_sync_failed_at: '' },
+      }
     );
     log.info({ retailerId: item.retailer_id }, 'addProduct synced');
     return { success: true, retailer_id: item.retailer_id };
@@ -1197,7 +1231,11 @@ const syncItemAvailability = async (restaurantId, menuItem) => {
     if (menuItem._id) {
       await col('menu_items').updateOne(
         { _id: menuItem._id },
-        { $set: { catalog_sync_status: 'synced', catalog_synced_at: new Date() } }
+        {
+          $set:   { catalog_sync_status: 'synced', catalog_synced_at: new Date() },
+          // Self-clear any prior validation failure once the item syncs OK.
+          $unset: { catalog_sync_error: '', catalog_sync_failed_at: '' },
+        }
       );
     }
     return handle;
@@ -1363,6 +1401,49 @@ const getSyncStatus = async (restaurantId) => {
 
 // ─── PRODUCT SETS — CRUD + SYNC ─────────────────────────────
 
+// Fix-3 approach: re-issue the lightweight verify GET (self-contained).
+//
+// ensureMainCatalog now returns `verified:false` when it could not
+// confirm the catalog id is live on Meta (network/timeout/unexpected
+// error path) and trusts a stale stored id. That signal cannot be
+// plumbed cleanly into syncProductSets / ensureBranchCollection without
+// changing the signatures of several intermediate callers (some invoked
+// from out-of-file routes: syncBranchCatalog, autoCreateProductSets,
+// syncAllBranchCollections, the syncCategoryProductSets legacy wrapper).
+// Per the task's stated fallback, we instead re-run the SAME lightweight
+// verify-GET here — identical shape to ensureMainCatalog's verify GET
+// (params:{access_token, fields:'id'}, timeout) at ~line 117 — and gate
+// creates on its result. Returns true only on a successful GET; on a
+// hard 400/404 (catalog gone) or 500+code:100 (Meta "object does not
+// exist") returns false so we skip known-dead create requests. Any
+// other failure (network/timeout) returns true so transient blips do
+// not block legitimate syncs (mirrors ensureMainCatalog's trust-on-
+// network-error stance for the stored id).
+async function _isCatalogVerified(catalogId) {
+  if (!catalogId) return false;
+  const token = _getCatalogToken();
+  try {
+    await axios.get(`${GRAPH}/${catalogId}`, {
+      params: { access_token: token, fields: 'id' }, timeout: 8000,
+    });
+    return true;
+  } catch (err) {
+    const httpStatus = err.response?.status;
+    const metaErrCode = err.response?.data?.error?.code;
+    const isDeadCatalog =
+      httpStatus === 400 ||
+      httpStatus === 404 ||
+      (httpStatus === 500 && metaErrCode === 100);
+    if (isDeadCatalog) {
+      log.warn({ catalogId, httpStatus, metaErrCode }, '_isCatalogVerified: catalog id not live on Meta');
+      return false;
+    }
+    // Transient / unexpected — do not block the sync on a blip.
+    log.warn({ catalogId, httpStatus, metaErrCode }, '_isCatalogVerified: verify GET inconclusive — proceeding');
+    return true;
+  }
+}
+
 // Build Meta filter JSON from product_set document.
 //
 // Meta's Catalog filter rules are a thin Elastic Search-style DSL keyed
@@ -1403,9 +1484,17 @@ const createProductSet = async (catalogId, name, filter) => {
     log.info({ name, productSetId: res.data.id }, 'Created product set');
     return res.data;
   } catch (err) {
-    const msg = err.response?.data?.error?.message || err.message;
+    const metaError = err.response?.data?.error;
+    const msg = metaError?.message || err.message;
     log.error({ err, name }, 'createProductSet failed');
-    throw new Error(msg);
+    // Preserve existing behavior (throw an Error with the same message),
+    // but ADD the HTTP status + the full Meta error object so callers
+    // (syncProductSets recovery) can branch on a 400 and surface
+    // error_user_title / error_subcode, which used to be dropped here.
+    const e = new Error(msg);
+    e.httpStatus = err.response?.status;
+    e.metaError = metaError || null;
+    throw e;
   }
 };
 
@@ -1457,6 +1546,13 @@ const syncProductSets = async (branchId) => {
 
   if (!sets.length) return { skipped: true, reason: 'No product sets' };
 
+  // Fix 3: re-issue the lightweight verify GET once per sync and gate
+  // CREATEs on it. If the catalog id is not confirmed live on Meta we
+  // skip new product-set creation rather than issue known-dead requests.
+  // Updates of already-synced sets still proceed (their id is its own
+  // proof of prior existence).
+  const catalogVerified = await _isCatalogVerified(branch.catalog_id);
+
   const results = { created: 0, updated: 0, failed: 0 };
 
   for (const set of sets) {
@@ -1475,12 +1571,72 @@ const syncProductSets = async (branchId) => {
         await updateProductSet(set.meta_product_set_id, set.name, filter);
         results.updated++;
       } else {
-        const created = await createProductSet(branch.catalog_id, set.name, filter);
-        await col('product_sets').updateOne(
-          { _id: set._id },
-          { $set: { meta_product_set_id: created.id, updated_at: new Date() } }
-        );
-        results.created++;
+        if (!catalogVerified) {
+          log.warn({ setName: set.name, branchId, catalogId: branch.catalog_id }, 'skipping product-set sync — catalog id not verified on Meta');
+          continue;
+        }
+        try {
+          const created = await createProductSet(branch.catalog_id, set.name, filter);
+          await col('product_sets').updateOne(
+            { _id: set._id },
+            { $set: { meta_product_set_id: created.id, updated_at: new Date() } }
+          );
+          results.created++;
+        } catch (createErr) {
+          // Upsert recovery: a 400 on create frequently means a product
+          // set with this name ALREADY exists on Meta (e.g. created by a
+          // prior partial sync, or a name-case collision). Reconcile by
+          // GETting the catalog's product_sets and adopting the existing
+          // set instead of re-creating. Mirrors the lightweight catalog
+          // GET shape used in ensureMainCatalog (params:{access_token,
+          // fields}, timeout) — see ~line 117 / 151.
+          if (createErr.httpStatus === 400) {
+            const normalizedName = String(set.name).trim().toLowerCase();
+            const token = _getCatalogToken();
+            // First-page-only lookup: branches typically have <25 sets,
+            // well under Meta's default page size, so a single page is
+            // sufficient. (No pagination handling exists for this GET
+            // elsewhere in the file; if one is added, mirror it here.)
+            let adopted = null;
+            try {
+              const psRes = await axios.get(`${GRAPH}/${branch.catalog_id}/product_sets`, {
+                params: { access_token: token, fields: 'id,name' }, timeout: 15000,
+              });
+              const remoteSets = psRes.data?.data || [];
+              adopted = remoteSets.find(
+                rs => String(rs.name || '').trim().toLowerCase() === normalizedName
+              ) || null;
+            } catch (lookupErr) {
+              log.warn({ err: lookupErr, setName: set.name }, 'Product set adopt-lookup GET failed');
+            }
+            if (adopted) {
+              await col('product_sets').updateOne(
+                { _id: set._id },
+                { $set: { meta_product_set_id: adopted.id, updated_at: new Date() } }
+              );
+              log.info({ setName: set.name, metaProductSetId: adopted.id }, 'Adopted existing Meta product set (upsert recovery)');
+              results.created++;
+              continue;
+            }
+            // No existing set to adopt — surface the FULL Meta error
+            // (error_user_title / error_subcode were dropped by
+            // createProductSet's plain throw) and skip this set. We do
+            // NOT mark it permanently un-retryable beyond the existing
+            // synced_orphan behavior below — just re-throw to the outer
+            // catch so it is handled exactly like before.
+            const me = createErr.metaError || {};
+            log.error({
+              setName: set.name,
+              httpStatus: createErr.httpStatus,
+              error_code: me.code,
+              error_subcode: me.error_subcode,
+              error_user_title: me.error_user_title,
+              error_user_msg: me.error_user_msg,
+              message: me.message,
+            }, 'createProductSet 400 and no existing set to adopt — skipping set');
+          }
+          throw createErr;
+        }
       }
     } catch (err) {
       log.error({ err, setName: set.name }, 'Product set sync failed');
@@ -1539,7 +1695,11 @@ const autoCreateProductSets = async (branchId) => {
   }
 
   for (const tagVal of tagValues) {
-    const existing = await col('product_sets').findOne({ branch_id: branchId, name: tagVal });
+    // Normalize the dedup key so "Main Course" and "main course"
+    // collapse to a single product_sets record. Used for BOTH the
+    // findOne lookup AND the persisted name.
+    const normalizedName = String(tagVal).trim().toLowerCase();
+    const existing = await col('product_sets').findOne({ branch_id: branchId, name: normalizedName });
     if (existing) { skipped++; continue; }
 
     await col('product_sets').insertOne({
@@ -1548,8 +1708,11 @@ const autoCreateProductSets = async (branchId) => {
       restaurant_id: branch.restaurant_id,
       catalog_id: branch.catalog_id || null,
       meta_product_set_id: null,
-      name: tagVal,
-      type: 'category',
+      name: normalizedName,
+      // tag-derived set → type:'tag' (was inverted to 'category').
+      // _buildSetFilter emits the same product_tags i_contains filter
+      // for both 'tag' and 'category', so this swap is filter-safe.
+      type: 'tag',
       filter_value: tagVal,
       manual_retailer_ids: [],
       is_active: true,
@@ -1566,7 +1729,10 @@ const autoCreateProductSets = async (branchId) => {
   if (catIds.length) {
     const cats = await col('menu_categories').find({ _id: { $in: catIds } }).sort({ sort_order: 1 }).toArray();
     for (const cat of cats) {
-      const existing = await col('product_sets').findOne({ branch_id: branchId, name: cat.name });
+      // Same normalization as the tag-source site so case-variant
+      // category names dedup to one record.
+      const normalizedName = String(cat.name).trim().toLowerCase();
+      const existing = await col('product_sets').findOne({ branch_id: branchId, name: normalizedName });
       if (existing) { skipped++; continue; }
 
       await col('product_sets').insertOne({
@@ -1575,8 +1741,10 @@ const autoCreateProductSets = async (branchId) => {
         restaurant_id: branch.restaurant_id,
         catalog_id: branch.catalog_id || null,
         meta_product_set_id: null,
-        name: cat.name,
-        type: 'tag',
+        name: normalizedName,
+        // category-derived set → type:'category' (was inverted to 'tag').
+        // Filter-safe: _buildSetFilter treats 'tag'/'category' identically.
+        type: 'category',
         filter_value: cat.name,
         manual_retailer_ids: [],
         is_active: true,
@@ -1975,6 +2143,15 @@ const ensureBranchCollection = async (branchId) => {
       log.info({ collectionName, setCount: metaSetIds.length }, 'Updated branch Collection');
       return { success: true, updated: true, collectionId: branch.meta_collection_id };
     } else {
+      // Fix 3: re-issue the lightweight verify GET before creating a new
+      // Collection — skip a known-dead create if the catalog id is not
+      // confirmed live on Meta. (Self-contained; same shape as
+      // ensureMainCatalog's verify GET.)
+      const catalogVerified = await _isCatalogVerified(branch.catalog_id);
+      if (!catalogVerified) {
+        log.warn({ branchName: branch.name, catalogId: branch.catalog_id }, 'skipping collection sync — catalog id not verified on Meta');
+        return { skipped: true, reason: 'Catalog id not verified on Meta' };
+      }
       // Create new Collection
       const created = await createCollection(branch.catalog_id, collectionName, metaSetIds, description);
       await col('branches').updateOne(

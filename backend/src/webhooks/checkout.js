@@ -6,6 +6,7 @@
 'use strict';
 
 const express = require('express');
+const crypto = require('crypto');
 const router = express.Router();
 const { col, newId } = require('../config/database');
 const { decryptCheckoutPayload, verifyCheckoutSignature } = require('../services/checkout-crypto');
@@ -22,7 +23,27 @@ router.get('/', (req, res) => {
   const mode = req.query['hub.mode'];
   const token = req.query['hub.verify_token'];
   const challenge = req.query['hub.challenge'];
-  if (mode === 'subscribe' && token === process.env.WA_CHECKOUT_VERIFY_TOKEN) {
+  // Constant-time verify-token comparison. Mirrors the canonical
+  // POST X-Hub-Signature-256 idiom used across these webhook files
+  // (webhooks/catalog.js:47-50): Buffer.from() both sides →
+  // Buffer.byteLength length guard → crypto.timingSafeEqual (throws
+  // on unequal length, so the guard runs first). The POST handler
+  // here delegates signature verification to verifyCheckoutSignature
+  // (services/checkout-crypto.js), so the catalog.js webhook idiom is
+  // the in-repo reference. Fail closed: unset/empty expected token,
+  // missing provided token, or any mismatch → 403, never echo
+  // hub.challenge.
+  const expectedVerifyToken = process.env.WA_CHECKOUT_VERIFY_TOKEN;
+  if (!expectedVerifyToken || !token) {
+    return res.sendStatus(403);
+  }
+  const provBuf = Buffer.from(token);
+  const expBuf  = Buffer.from(expectedVerifyToken);
+  // timingSafeEqual throws on unequal-length buffers — guard first
+  const tokenOk =
+    Buffer.byteLength(token) === Buffer.byteLength(expectedVerifyToken) &&
+    crypto.timingSafeEqual(provBuf, expBuf);
+  if (mode === 'subscribe' && tokenOk) {
     return res.status(200).send(challenge);
   }
   res.sendStatus(403);

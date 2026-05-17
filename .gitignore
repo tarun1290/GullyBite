@@ -126,7 +126,6 @@ prompts/settlement-prompt-2.md
 backend/scripts/visual-audit-screenshots/dashboard_analytics_desktop.png
 backend/scripts/visual-audit-screenshots/dashboard_analytics_mobile.png
 backend/scripts/visual-audit-screenshots/dashboard_marketing_desktop.png
-.gitignore
 backend/scripts/visual-audit-screenshots/dashboard_marketing_mobile.png
 backend/scripts/visual-audit-screenshots/dashboard_messages_mobile.png
 backend/scripts/visual-audit-screenshots/dashboard_menu_desktop.png
@@ -135,16 +134,13 @@ backend/scripts/visual-audit-screenshots/dashboard_desktop.png
 backend/scripts/visual-audit-screenshots/dashboard_mobile.png
 backend/scripts/visual-audit-screenshots/dashboard_orders_mobile.png
 backend/scripts/visual-audit-screenshots/dashboard_orders_desktop.png
-.gitignore
 backend/scripts/visual-audit-screenshots/dashboard_overview_desktop.png
 backend/scripts/visual-audit-screenshots/dashboard_overview_mobile.png
 backend/scripts/visual-audit-screenshots/dashboard_reputation_mobile.png
 backend/scripts/visual-audit-screenshots/dashboard_menu_mobile.png
 backend/scripts/visual-audit-screenshots/dashboard_payments_desktop.png
-.gitignore
 backend/scripts/visual-audit-screenshots/dashboard_payments_mobile.png
 backend/scripts/visual-audit-screenshots/store_beyond-snacks-1_desktop.png
-.gitignore
 backend/scripts/visual-audit-screenshots/dashboard_settings_desktop.png
 backend/scripts/visual-audit-screenshots/store_beyond-snacks-1_mobile.png
 backend/scripts/visual-audit-screenshots/dashboard_reputation_desktop.png

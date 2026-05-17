@@ -9,6 +9,12 @@ import {
   getMenuUnassigned,
   quickSyncBranchCatalog,
 } from '../../../api/restaurant';
+// Single-file ownership: this component may only edit itself and must NOT add a
+// helper to api/restaurant.ts. So we hit the new sync-failures endpoint using
+// the SAME shared axios client that api/restaurant.ts uses internally
+// (api/restaurant.ts: `import client from '../lib/apiClient'`; from
+// components/restaurant/menu/ the equivalent path is ../../../lib/apiClient).
+import client from '../../../lib/apiClient';
 import type { Branch } from '../../../types';
 
 interface SyncStatus {
@@ -30,6 +36,15 @@ interface QuickSyncResult {
   success?: boolean;
   updated?: number;
   errors?: string[];
+}
+
+interface SyncFailure {
+  _id: string;
+  name?: string;
+  retailer_id?: string;
+  catalog_sync_error?: string;
+  catalog_sync_failed_at?: string | null;
+  is_available?: boolean;
 }
 
 interface CatalogSyncSectionProps {
@@ -55,6 +70,7 @@ export default function CatalogSyncSection({ branches, selectedBranchId }: Catal
   const [pulling, setPulling] = useState<boolean>(false);
   const [unassignedCount, setUnassignedCount] = useState<number>(0);
   const [pendingAction, setPendingAction] = useState<PendingAction>(null);
+  const [syncFailures, setSyncFailures] = useState<SyncFailure[]>([]);
 
   const refreshStatus = async () => {
     try {
@@ -68,6 +84,16 @@ export default function CatalogSyncSection({ branches, selectedBranchId }: Catal
     getMenuUnassigned().then((list) => {
       setUnassignedCount(Array.isArray(list) ? list.length : 0);
     }).catch(() => setUnassignedCount(0));
+    // Additive: surface items the backend failed to sync to the WhatsApp
+    // catalog. Endpoint returns an array in res.data on success, or 500
+    // { success:false, message } on error — on any failure we silently
+    // leave the list empty so the existing sync UI is never blocked.
+    client
+      .get('/api/restaurant/catalog/sync-failures')
+      .then((res) => {
+        setSyncFailures(Array.isArray(res.data) ? (res.data as SyncFailure[]) : []);
+      })
+      .catch(() => setSyncFailures([]));
   }, []);
 
   const doPush = async () => {
@@ -134,6 +160,28 @@ export default function CatalogSyncSection({ branches, selectedBranchId }: Catal
 
   return (
     <div>
+      {syncFailures.length > 0 && (
+        <div className="notice warn mb-4">
+          <div className="notice-ico">⚠️</div>
+          <div className="notice-body">
+            <p className="font-semibold">
+              {syncFailures.length} item{syncFailures.length === 1 ? '' : 's'} not syncing to WhatsApp catalog
+            </p>
+            <ul className="list-disc pl-5 my-2 text-sm">
+              {syncFailures.map((f) => (
+                <li key={f._id}>
+                  {(f.name || f.retailer_id || 'Item')}
+                  {f.catalog_sync_error ? ` — ${f.catalog_sync_error}` : ''}
+                </li>
+              ))}
+            </ul>
+            <p className="text-sm text-dim">
+              Fix these items in your menu to sync them to your WhatsApp catalog
+            </p>
+          </div>
+        </div>
+      )}
+
       <div className="card mb-4">
         <div className="ch"><h3>🔄 Catalog Sync</h3></div>
         <div className="cb">

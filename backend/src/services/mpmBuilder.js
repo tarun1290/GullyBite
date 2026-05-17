@@ -243,7 +243,9 @@ async function buildBranchMPMs(branchId, restaurantId) {
   // Second pass: collapse variants, pick representative per group
   // Track retailer_ids already used in Bestsellers to avoid double-counting
   const globalUsedIds = new Set();
-  const sections = [];
+  // `let` (not `const`): reassigned after assembly when the early
+  // mergeSectionsIfNeeded pass replaces it with the merged array.
+  let sections = [];
   let totalProductGroups = 0;
 
   // Sort categories by defined order
@@ -298,11 +300,9 @@ async function buildBranchMPMs(branchId, restaurantId) {
 
   if (!sections.length) return [];
 
-  log.info({ branchName: branch.name, totalItems: items.length, productGroups: totalProductGroups, sections: sections.length, deduped: globalUsedIds.size }, 'MPM sections built');
-
-  const restName = restaurant.business_name || restaurant.name || 'Menu';
-
-  // Merge small sections if >10 to fit MPM limit
+  // Merge small sections if >10 to fit MPM limit.
+  // Defined here (before any count/branch decision) so the merge can run
+  // as the FIRST operation on the full sections array — see call below.
   function mergeSectionsIfNeeded(secs) {
     if (secs.length <= 10) return secs;
     // Sort by size ascending, merge smallest pairs
@@ -323,13 +323,34 @@ async function buildBranchMPMs(branchId, restaurantId) {
     return sorted;
   }
 
+  // ── Merge MUST run first ───────────────────────────────────
+  // Reduce section COUNT to ≤10 on the FULL sections array BEFORE any
+  // count is consumed, before the single-vs-multi branch, and before the
+  // food/drink bucket split — so every downstream decision sees post-merge
+  // sections (merging concatenates product lists, which can change which
+  // sections cross the 30-group cap and how buckets are sized).
+  sections = mergeSectionsIfNeeded(sections);
+
+  // totalProductGroups was accumulated inline during section building, so
+  // recompute it from the merged sections. (Merge only concatenates lists
+  // and never drops ids, so the grand total is unchanged in practice — but
+  // recomputing keeps the count authoritative against the merged array that
+  // every branch below now uses.)
+  totalProductGroups = sections.reduce((s, sec) => s + sec.product_retailer_ids.length, 0);
+
+  log.info({ branchName: branch.name, totalItems: items.length, productGroups: totalProductGroups, sections: sections.length, deduped: globalUsedIds.size }, 'MPM sections built');
+
+  const restName = restaurant.business_name || restaurant.name || 'Menu';
+
   // ── Single MPM case ────────────────────────────────────────
   if (totalProductGroups <= 30) {
     return [{
       header: `🍽️ ${restName} — ${branch.name}`,
       body: 'Browse items, tap for size options, and add to cart!',
       footer: taxFooter,
-      sections: mergeSectionsIfNeeded(sections),
+      // Already merged above; ≤30 groups here implies ≤10 sections and no
+      // section can exceed 30 groups, so no further split is needed.
+      sections,
     }];
   }
 
@@ -359,17 +380,60 @@ async function buildBranchMPMs(branchId, restaurantId) {
 
   const mpms = [];
 
+  // ── Per-section 30 product-group cap ───────────────────────
+  // Meta rejects an MPM if ANY section exceeds 30 product groups. Split
+  // any oversized section into consecutive sub-sections of ≤30, named
+  // deterministically with a numeric suffix derived from the original
+  // title ("🥟 Starters" → "🥟 Starters 1", "🥟 Starters 2", …). No
+  // truncation of product ids — every id is preserved across sub-sections.
+  // Sub-section titles are kept within the same 24-char limit the rest of
+  // the file enforces on section titles (see section build + merge).
+  function splitOversizedSections(secs) {
+    const out = [];
+    for (const sec of secs) {
+      const ids = sec.product_retailer_ids;
+      if (ids.length <= 30) { out.push(sec); continue; }
+
+      const subCount = Math.ceil(ids.length / 30);
+      log.info(
+        { title: sec.title, productGroups: ids.length, subSections: subCount },
+        'MPM section exceeded 30 product groups — split into sub-sections',
+      );
+      for (let i = 0; i < subCount; i++) {
+        const suffix = ` ${i + 1}`;
+        // Keep title within 24 chars: trim the base so base + " N" ≤ 24.
+        const base = sec.title.substring(0, 24 - suffix.length);
+        out.push({
+          title: `${base}${suffix}`,
+          product_retailer_ids: ids.slice(i * 30, (i + 1) * 30),
+          _catLower: sec._catLower,
+        });
+      }
+    }
+    return out;
+  }
+
   // Build MPMs from section buckets, respecting 30 items + 10 sections limits
   function buildMPMsFromBucket(label, secs) {
     if (!secs.length) return;
 
-    // FIRST: merge sections to respect 10-section limit
+    // FIRST: split any section >30 product groups into ≤30 sub-sections.
+    // Done BEFORE the merge/batcher below so oversized sections are spread
+    // across MPMs (the batcher distributes ≤30 items per MPM) rather than
+    // concentrated. Splitting can raise the section count back above 10 —
+    // that is fine: the mergeSectionsIfNeeded call right after re-caps each
+    // bucket/batch to ≤10 sections per MPM.
+    secs = splitOversizedSections(secs);
+
+    // THEN: merge sections to respect 10-section limit
     secs = mergeSectionsIfNeeded(secs);
     const count = secs.reduce((s, sec) => s + sec.product_retailer_ids.length, 0);
     log.info({ label, sections: secs.length, products: count }, 'Building MPMs from bucket');
 
     if (count <= 30) {
-      // Single MPM — sections already merged to ≤10
+      // Single MPM — sections already merged to ≤10. count ≤ 30 means even
+      // if the merge above concatenated sub-sections, no section can exceed
+      // 30 product groups, so the 30-cap holds without a re-split.
       mpms.push({
         header: `${label} — ${branch.name}`,
         body: 'Browse and add to cart. Your cart persists across messages!',
@@ -380,7 +444,15 @@ async function buildBranchMPMs(branchId, restaurantId) {
       return;
     }
 
-    // Need multiple MPMs — batch by item count (≤30 items per MPM)
+    // Need multiple MPMs — batch by item count (≤30 items per MPM).
+    // Re-split here: the section-count merge above can concatenate two
+    // ≤30 sub-sections into a >30 section when the bucket has >10 sections.
+    // Re-splitting before the batcher guarantees every section entering a
+    // batch is ≤30 groups; since each batch is itself capped at ≤30 items,
+    // the per-batch mergeSectionsIfNeeded below can never re-inflate a
+    // section past 30 either. Net: every emitted section is ≤30 groups.
+    secs = splitOversizedSections(secs);
+
     let batch = [];
     let batchItems = 0;
     let part = 1;

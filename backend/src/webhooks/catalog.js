@@ -16,7 +16,23 @@ router.get('/', (req, res) => {
   const token     = req.query['hub.verify_token'];
   const challenge = req.query['hub.challenge'];
 
-  if (mode === 'subscribe' && token === process.env.WEBHOOK_VERIFY_TOKEN) {
+  // Constant-time verify-token comparison. Mirrors the POST
+  // X-Hub-Signature-256 idiom below (this file, ~line 47-50):
+  // Buffer.from() both sides → Buffer.byteLength length guard →
+  // crypto.timingSafeEqual (throws on unequal length, so the guard
+  // runs first). Fail closed: unset/empty expected token, missing
+  // provided token, or any mismatch → 403, never echo hub.challenge.
+  const expectedVerifyToken = process.env.WEBHOOK_VERIFY_TOKEN;
+  if (!expectedVerifyToken || !token) {
+    return res.sendStatus(403);
+  }
+  const provBuf = Buffer.from(token);
+  const expBuf  = Buffer.from(expectedVerifyToken);
+  // timingSafeEqual throws on unequal-length buffers — guard first
+  const tokenOk =
+    Buffer.byteLength(token) === Buffer.byteLength(expectedVerifyToken) &&
+    crypto.timingSafeEqual(provBuf, expBuf);
+  if (mode === 'subscribe' && tokenOk) {
     req.log.info('Webhook verified');
     return res.status(200).send(challenge);
   }

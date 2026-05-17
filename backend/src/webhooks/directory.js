@@ -5,6 +5,7 @@
 'use strict';
 
 const express = require('express');
+const crypto = require('crypto');
 const router = express.Router();
 const { col, newId } = require('../config/database');
 const directory = require('../services/directory');
@@ -43,7 +44,25 @@ router.get('/', (req, res) => {
   const mode = req.query['hub.mode'];
   const token = req.query['hub.verify_token'];
   const challenge = req.query['hub.challenge'];
-  if (mode === 'subscribe' && token === (process.env.WEBHOOK_VERIFY_TOKEN || process.env.DIRECTORY_WA_VERIFY_TOKEN)) {
+  // Constant-time verify-token comparison. Mirrors the POST
+  // X-Hub-Signature-256 idiom below (this file, ~line 72-75):
+  // Buffer.from() both sides → Buffer.byteLength length guard →
+  // crypto.timingSafeEqual (throws on unequal length, so the guard
+  // runs first). Fail closed: unset/empty expected token, missing
+  // provided token, or any mismatch → 403, never echo hub.challenge.
+  // Env resolution preserved exactly: WEBHOOK_VERIFY_TOKEN falls back
+  // to DIRECTORY_WA_VERIFY_TOKEN.
+  const expectedVerifyToken = process.env.WEBHOOK_VERIFY_TOKEN || process.env.DIRECTORY_WA_VERIFY_TOKEN;
+  if (!expectedVerifyToken || !token) {
+    return res.sendStatus(403);
+  }
+  const provBuf = Buffer.from(token);
+  const expBuf  = Buffer.from(expectedVerifyToken);
+  // timingSafeEqual throws on unequal-length buffers — guard first
+  const tokenOk =
+    Buffer.byteLength(token) === Buffer.byteLength(expectedVerifyToken) &&
+    crypto.timingSafeEqual(provBuf, expBuf);
+  if (mode === 'subscribe' && tokenOk) {
     return res.status(200).send(challenge);
   }
   res.sendStatus(403);

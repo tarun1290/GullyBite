@@ -4615,6 +4615,20 @@ router.get('/catalog/sync-status', async (req, res) => {
   } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
+// GET /api/restaurant/catalog/sync-failures — menu items whose last catalog
+// sync to Meta failed. restaurant_id is taken from the authenticated
+// req.restaurantId only (set by the global requireAuth gate above); never
+// from client input. Projection is minimal — no full product docs.
+router.get('/catalog/sync-failures', async (req, res) => {
+  try {
+    const items = await col('menu_items').find(
+      { restaurant_id: req.restaurantId, catalog_sync_error: { $exists: true } },
+      { projection: { name: 1, retailer_id: 1, catalog_sync_error: 1, catalog_sync_failed_at: 1, is_available: 1 } }
+    ).toArray();
+    res.json(items);
+  } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
+});
+
 router.post('/catalog/clear-and-resync', async (req, res) => {
   try {
     const restaurant = await col('restaurants').findOne({ _id: req.restaurantId });
