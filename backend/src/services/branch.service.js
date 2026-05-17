@@ -138,13 +138,14 @@ async function updateBranch(branchId, patch) {
     if (!v.ok) throw Object.assign(new Error(v.reason), { statusCode: 400 });
     update.gst_number = v.normalized;
   }
-  const res = await col('branches').findOneAndUpdate(
+  // mongodb ^6: findOneAndUpdate returns the document directly (no .value wrapper); null if nothing matched
+  const doc = await col('branches').findOneAndUpdate(
     { _id: String(branchId) },
     { $set: update },
     { returnDocument: 'after' }
   );
-  if (!res.value) throw Object.assign(new Error('branch not found'), { statusCode: 404 });
-  return res.value;
+  if (!doc) throw Object.assign(new Error('branch not found'), { statusCode: 404 });
+  return doc;
 }
 
 module.exports = {

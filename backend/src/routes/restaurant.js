@@ -2050,12 +2050,16 @@ router.patch('/branches/:id', requireStaffPermission('manage_settings'), require
 // flips the branch back to 'active' with paid_through_date = now+15d
 // (matching the settlement job's cycle length).
 //
-// Idempotency / refId: the cycle key is the request timestamp, so a
-// rapid double-click writes two distinct ledger entries. We accept that
-// trade-off — the alternative (ref_id keyed by branch+date) would
-// silently no-op the second click without surfacing it. If duplicate
-// charges become a problem, add a short-lived per-branch in-flight
-// guard at the route layer.
+// Idempotency / refId: the cycle key is DETERMINISTIC per unpaid cycle
+// — keyed off the branch's paid_through_date (day granularity, since the
+// bi-monthly cycle is 15 days and two cycles can fall in one calendar
+// month), or 'initial' for the first-ever cycle. Every retry click within
+// the same unpaid cycle collides on the same ref_id, so the unique
+// (restaurant_id, ref_type, ref_id) index → E11000 → ledger returns the
+// existing row instead of double-debiting. A server-side already-paid
+// guard (a 'completed' branch_subscription entry for this branch in the
+// last 15 days) short-circuits before the balance precheck so a rapid
+// double-click after a successful charge returns 200 without re-debiting.
 router.post('/branches/:branchId/billing-retry', async (req, res) => {
   try {
     const branch = await col('branches').findOne({ _id: req.params.branchId });
@@ -2071,6 +2075,33 @@ router.post('/branches/:branchId/billing-retry', async (req, res) => {
     const ledger = require('../services/ledger.service');
     const { BIMONTHLY_FEE_PAISE, BIMONTHLY_FEE_WITH_GST_RS } = require('../config/financeConfig');
 
+    // Server-side already-paid guard (additive — sits BEFORE the balance
+    // precheck below, which is left unchanged). A successful retry writes a
+    // 'completed' branch_subscription debit carrying branch_id and advances
+    // paid_through_date by 15 days. If such a 'completed' entry exists for
+    // THIS branch within the last 15 days (the cycle length), the period is
+    // already paid: short-circuit with 200 so a rapid double-click — or a
+    // retry on a branch that was already resumed — doesn't debit again. The
+    // deterministic ref_id below also dedupes at the ledger layer; this
+    // guard surfaces the no-op cleanly instead of relying on E11000.
+    const cycleAgo = new Date(Date.now() - 15 * 24 * 60 * 60 * 1000);
+    const alreadyPaid = await col('restaurant_ledger').findOne({
+      restaurant_id: String(req.restaurantId),
+      branch_id: String(branch._id),
+      ref_type: 'branch_subscription',
+      status: 'completed',
+      created_at: { $gt: cycleAgo },
+    });
+    if (alreadyPaid) {
+      return res.json({
+        ok: true,
+        message: 'Already paid for current period',
+        paid_through_date: branch.paid_through_date
+          ? new Date(branch.paid_through_date).toISOString()
+          : null,
+      });
+    }
+
     const balance = await ledger.balancePaise(req.restaurantId);
     if (balance < BIMONTHLY_FEE_PAISE) {
       return res.status(400).json({
@@ -2082,15 +2113,25 @@ router.post('/branches/:branchId/billing-retry', async (req, res) => {
 
     const now = new Date();
     const branchId = String(branch._id);
+    // Deterministic per-cycle ref_id. paid_through_date is a BSON Date
+    // (schema type 'date'; written as `new Date(now + 15d)` on success).
+    // Day granularity (YYYY-MM-DD) — NOT month — because the bi-monthly
+    // cycle is 15 days, so two distinct cycles can land in one calendar
+    // month. Every retry within the same unpaid cycle resolves to the
+    // same ref_id; the unique (restaurant_id, ref_type, ref_id) index
+    // makes repeat debits idempotent (ledger.debit returns the existing
+    // row on E11000). 'initial' covers the first-ever cycle (no
+    // paid_through_date yet).
+    const nextCycleKey = branch.paid_through_date
+      ? new Date(branch.paid_through_date).toISOString().slice(0, 10)
+      : 'initial';
     try {
       await ledger.debit({
         restaurantId: String(req.restaurantId),
         branchId,
         amountPaise: BIMONTHLY_FEE_PAISE,
         refType: 'branch_subscription',
-        // Timestamp keys this debit to the retry moment — see header
-        // comment for why we don't use a deterministic per-cycle key.
-        refId: `${branchId}:retry:${now.toISOString()}`,
+        refId: `${branchId}:subscription:${nextCycleKey}`,
         status: 'completed',
         notes: `Branch subscription retry (₹${BIMONTHLY_FEE_WITH_GST_RS})`,
       });

@@ -108,12 +108,19 @@ async function debit({ restaurantId, amountPaise, refType, refId, notes, status,
 // issueRefund-time. Returns the updated row, or null if the lookup
 // failed (caller should fall back to creating a new completed entry).
 async function markCompleted({ restaurantId, refType, refId }) {
-  const res = await col(COLLECTION).findOneAndUpdate(
+  // mongodb ^6: findOneAndUpdate (without includeResultMetadata) returns the
+  // updated document directly, or null if no document matched — there is no
+  // `.value` wrapper (that was the legacy driver-v4 shape).
+  const doc = await col(COLLECTION).findOneAndUpdate(
     { restaurant_id: String(restaurantId), ref_type: refType, ref_id: String(refId) },
     { $set: { status: 'completed', updated_at: new Date() } },
     { returnDocument: 'after' }
   );
-  return res?.value || null;
+  if (!doc) {
+    log.warn({ restaurantId, refType, refId }, 'ledger: no matching pending entry found to mark completed');
+    return null;
+  }
+  return doc;
 }
 
 // Sum of credits - sum of debits for a restaurant, in paise.

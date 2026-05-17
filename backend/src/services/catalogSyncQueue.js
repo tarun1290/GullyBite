@@ -106,8 +106,9 @@ async function _tick() {
     { $set: { status: 'dispatching', updated_at: now } },
     { returnDocument: 'after' }
   );
-  if (!row?.value) return false;
-  const doc = row.value;
+  // mongodb ^6: findOneAndUpdate returns the document directly (no .value wrapper)
+  if (!row) return false;
+  const doc = row;
 
   try {
     const { enqueue, JOB_TYPES } = require('../queue/postPaymentJobs');

@@ -151,6 +151,7 @@ async function assignProductToBranch({ product_id, branch_id, restaurant_id, pri
   if (currentScalar == null || currentScalar === '') {
     setOps.branch_id = String(branch_id);
   }
+  // mongodb ^6: findOneAndUpdate returns the document directly (no .value wrapper)
   const updated = await col('menu_items').findOneAndUpdate(
     { _id: String(product_id), restaurant_id: String(restaurant_id) },
     {
@@ -170,7 +171,7 @@ async function assignProductToBranch({ product_id, branch_id, restaurant_id, pri
     { productId: product_id, branchId: branch_id, scalarBackfilled: 'branch_id' in setOps },
     'product assigned to branch'
   );
-  return updated.value;
+  return updated;
 }
 
 // ─── UNASSIGN ───────────────────────────────────────────────────
@@ -183,14 +184,15 @@ async function unassignFromBranch({ product_id, branch_id, restaurant_id }) {
   // Tenant scoping: only mutate a product owned by the caller's
   // restaurant. A non-match yields the same 404 'product not found' as a
   // genuinely missing product — no cross-tenant existence leak.
+  // mongodb ^6: findOneAndUpdate returns the document directly (no .value wrapper)
   const res = await col('menu_items').findOneAndUpdate(
     { _id: String(product_id), restaurant_id: String(restaurant_id) },
     { $pull: { branch_ids: String(branch_id) }, $set: { updated_at: new Date() } },
     { returnDocument: 'after' }
   );
-  if (!res.value) throw Object.assign(new Error('product not found'), { statusCode: 404 });
+  if (!res) throw Object.assign(new Error('product not found'), { statusCode: 404 });
 
-  const doc = res.value;
+  const doc = res;
   const remaining = Array.isArray(doc.branch_ids) ? doc.branch_ids : [];
   const scalarPointedAtUnassigned = String(doc.branch_id || '') === String(branch_id);
 
