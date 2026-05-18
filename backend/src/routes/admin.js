@@ -2946,7 +2946,7 @@ router.put('/templates/mappings/:event', express.json(), async (req, res) => {
 // the platform WABA so the frontend doesn't need to pass it. The template
 // seed is best-effort: if no WABA is configured we still seed mappings and
 // return an empty templates payload, mirroring the GET /flows pattern.
-router.post('/templates/seed', express.json(), async (req, res) => {
+router.post('/templates/seed', requireAdmin, express.json(), async (req, res) => {
   try {
     await templateSvc.seedDefaultMappings();
 

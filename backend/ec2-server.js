@@ -630,6 +630,28 @@ connect().then(() => {
   const { scheduleOwnerDailySummary } = require('./src/jobs/ownerDailySummary');
   scheduleOwnerDailySummary();
 
+  // Default template/mapping seed on boot. Fire-and-forget — never
+  // blocks listen(). Idempotent: seedDefaultTemplates skips templates
+  // already present per {waba_id,name} (+ Meta code-192 backstop), so
+  // every boot only creates genuinely-missing templates (e.g. a newly
+  // added order_issue_report_v1). Mirrors POST /api/admin/templates/seed.
+  (async () => {
+    try {
+      const templateSvc = require('./src/services/template');
+      const { col } = require('./src/config/database');
+      const wa = await col('whatsapp_accounts').findOne({ is_active: true });
+      if (wa?.waba_id) {
+        await templateSvc.seedDefaultMappings();
+        const r = await templateSvc.seedDefaultTemplates(wa.waba_id);
+        console.log(`[EC2] Template seed: created=${r?.created?.length || 0} skipped=${r?.skipped?.length || 0} waba=${wa.waba_id}`);
+      } else {
+        console.log('[EC2] Template seed: no active WABA — skipped');
+      }
+    } catch (e) {
+      console.error('[EC2] Template seed failed:', e?.message, '\n', e?.stack);
+    }
+  })();
+
   // try { require('./src/jobs/campaignSender'); } catch (e) { console.warn('[EC2] Campaign sender:', e.message); }
   console.log('[EC2] Campaign sender: disabled — module not yet implemented');
 
