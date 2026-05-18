@@ -62,10 +62,8 @@ export default function RiderLocationCard({ orderId }: RiderLocationCardProps) {
       <div className="mt-2.5 py-2.5 px-3 bg-green-50 border border-green-200 rounded-lg flex items-center gap-3 flex-wrap text-sm">
         <span
           aria-hidden
-          className="inline-block w-[9px] h-[9px] rounded-full bg-green-600 shrink-0"
-          // animation references the gb-rider-pulse keyframes injected
-          // above — Tailwind's animate-* utilities can't bind to it.
-          style={{ animation: 'gb-rider-pulse 1.5s ease-in-out infinite' }}
+          className="inline-block w-[9px] h-[9px] rounded-full bg-green-600 shrink-0 animate-[gb-rider-pulse_1.5s_ease-in-out_infinite]"
+          // uses gb-rider-pulse keyframes defined above via Tailwind arbitrary animate utility
         />
         <span className="font-semibold text-green-700">Rider is live</span>
         <span className="text-dim text-xs">
