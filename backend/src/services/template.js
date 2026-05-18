@@ -525,7 +525,7 @@ const DEFAULT_TEMPLATES = [
       {
         type: 'BUTTONS',
         buttons: [
-          { type: 'FLOW', text: 'Report an Issue', flow_id: process.env.ISSUE_FLOW_ID, flow_action: 'navigate', navigate_screen: 'ISSUE_CATEGORY' },
+          { type: 'FLOW', text: 'Report an Issue', flow_id: '1638637230765595', flow_action: 'navigate', navigate_screen: 'ISSUE_CATEGORY' },
         ],
       },
     ],
