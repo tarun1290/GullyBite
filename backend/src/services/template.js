@@ -573,6 +573,35 @@ async function _mirrorToCampaignTemplates(t, metaTemplateId) {
   );
 }
 
+// The order_issue_report_v1 FLOW button's flow_id is admin-configurable
+// via the "Dispute Raise" assignment (platform_settings._id:'dispute_flow').
+// Resolve it from the DB at seed time, falling back to the literal baked
+// into DEFAULT_TEMPLATES when the assignment doc/field is absent.
+// IMPORTANT: Meta binds flow_id INTO the template at create time — so a
+// later assignment change only takes effect when order_issue_report_v1
+// is (re)seeded/recreated on Meta, not retroactively on already-created
+// templates. Returns t unchanged for every other template, and a
+// shallow clone (components deep-copied) when it substitutes, so the
+// shared DEFAULT_TEMPLATES constant is never mutated.
+async function _withResolvedDisputeFlowId(t) {
+  if (t.name !== 'order_issue_report_v1') return t;
+  let dbFlowId = null;
+  try {
+    const doc = await col('platform_settings').findOne({ _id: 'dispute_flow' });
+    dbFlowId = doc?.flow_id || null;
+  } catch (_) { /* fall back to the baked-in literal */ }
+  if (!dbFlowId) return t;
+  const clone = { ...t, components: JSON.parse(JSON.stringify(t.components)) };
+  for (const c of clone.components) {
+    if (c.type === 'BUTTONS' && Array.isArray(c.buttons)) {
+      for (const b of c.buttons) {
+        if (b.type === 'FLOW') b.flow_id = dbFlowId;
+      }
+    }
+  }
+  return clone;
+}
+
 // Idempotently create the DEFAULT_TEMPLATES on Meta. Skips any name
 // already present in the local templates collection for this WABA;
 // also catches Meta's "name already exists" error (code 192) so a
@@ -609,7 +638,7 @@ const seedDefaultTemplates = async (wabaId) => {
       continue;
     }
     try {
-      const result = await createTemplate(wabaId, t);
+      const result = await createTemplate(wabaId, await _withResolvedDisputeFlowId(t));
       created.push({ name: t.name, meta_id: result.id, status: result.status || 'PENDING' });
       if (isMarketing) {
         try {

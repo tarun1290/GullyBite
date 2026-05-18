@@ -41,6 +41,7 @@ interface AssignmentEntry {
 interface AssignmentsMap {
   delivery?: AssignmentEntry;
   feedback?: AssignmentEntry;
+  dispute?: AssignmentEntry;
 }
 
 interface FlowTemplate {
@@ -263,6 +264,7 @@ export default function AdminFlowsPage() {
             <>
               <AssignmentRow label="Delivery Address" a={assignments.delivery || {}} />
               <AssignmentRow label="Order Feedback" a={assignments.feedback || {}} />
+              <AssignmentRow label="Dispute Raise" a={assignments.dispute || {}} />
             </>
           )}
         </div>
@@ -468,6 +470,7 @@ function RowActions({ flow, busy, onEdit, onAsk }: RowActionsProps): ReactNode {
         <>
           <button type="button" className="btn-g btn-sm ml-1" onClick={() => onAsk('assign', { assignType: 'delivery' })} disabled={busy}>Assign Delivery</button>
           <button type="button" className="btn-g btn-sm ml-1" onClick={() => onAsk('assign', { assignType: 'feedback' })} disabled={busy}>Assign Feedback</button>
+          <button type="button" className="btn-g btn-sm ml-1" onClick={() => onAsk('assign', { assignType: 'dispute' })} disabled={busy}>Assign Dispute</button>
           <button type="button" className="btn-g btn-sm ml-1" onClick={() => onAsk('deprecate')} disabled={busy}>Deprecate</button>
         </>
       )}

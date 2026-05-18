@@ -250,24 +250,22 @@ async function transitionOrder(orderId, nextState, opts = {}) {
 
     // ─── Post-delivery Issue Flow enqueue ──────────────────────
     // 90s after DELIVERED, prompt the customer with the issue/dispute
-    // Flow template (order_issue_report_v1). Env-gated: dev/staging
-    // without ISSUE_FLOW_ID skip silently — the FLOW button needs a
-    // real published Flow id anyway. The `issue-flow-<orderId>` jobId
-    // makes the enqueue idempotent across duplicate transitions. The
-    // handler re-checks status at fire time. Fire-and-forget — must
-    // never block or unwind the DELIVERED transition. Mirrors the
+    // Flow template (order_issue_report_v1). Always enqueued — the
+    // FLOW button's flow_id is hardcoded in services/template.js, so
+    // the env gate was dropped. The `issue-flow-<orderId>` jobId makes
+    // the enqueue idempotent across duplicate transitions. The handler
+    // re-checks status at fire time. Fire-and-forget — must never block
+    // or unwind the DELIVERED transition. Mirrors the
     // CART_RECOVERY-on-EXPIRED enqueue pattern below.
-    if (process.env.ISSUE_FLOW_ID) {
-      try {
-        const { enqueue, JOB_TYPES: JOBS } = require('../queue/postPaymentJobs');
-        enqueue(
-          JOBS.send_issue_flow_template,
-          { orderId },
-          { delayMs: 90000, jobId: `issue-flow-${orderId}` },
-        ).catch((err) => log.warn({ err: err?.message, orderId }, 'send_issue_flow_template enqueue failed'));
-      } catch (err) {
-        log.warn({ err: err?.message, orderId }, 'send_issue_flow_template enqueue dispatch failed');
-      }
+    try {
+      const { enqueue, JOB_TYPES: JOBS } = require('../queue/postPaymentJobs');
+      enqueue(
+        JOBS.send_issue_flow_template,
+        { orderId },
+        { delayMs: 90000, jobId: `issue-flow-${orderId}` },
+      ).catch((err) => log.warn({ err: err?.message, orderId }, 'send_issue_flow_template enqueue failed'));
+    } catch (err) {
+      log.warn({ err: err?.message, orderId }, 'send_issue_flow_template enqueue dispatch failed');
     }
   }
 

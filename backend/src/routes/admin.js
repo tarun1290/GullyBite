@@ -4097,7 +4097,8 @@ router.get('/flows/assignments', async (req, res) => {
   try {
     const delivery = await col('platform_settings').findOne({ _id: 'whatsapp_flow' });
     const feedback = await col('platform_settings').findOne({ _id: 'feedback_flow' });
-    res.json({ delivery: { flow_id: delivery?.flow_id || null, flow_name: delivery?.flow_name || null, flow_status: delivery?.flow_status || null, auto_assign: delivery?.auto_assign_new || false }, feedback: { flow_id: feedback?.flow_id || null, flow_name: feedback?.flow_name || null, flow_status: feedback?.flow_status || null } });
+    const dispute = await col('platform_settings').findOne({ _id: 'dispute_flow' });
+    res.json({ delivery: { flow_id: delivery?.flow_id || null, flow_name: delivery?.flow_name || null, flow_status: delivery?.flow_status || null, auto_assign: delivery?.auto_assign_new || false }, feedback: { flow_id: feedback?.flow_id || null, flow_name: feedback?.flow_name || null, flow_status: feedback?.flow_status || null }, dispute: { flow_id: dispute?.flow_id || null, flow_name: dispute?.flow_name || null, flow_status: dispute?.flow_status || null } });
   } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
@@ -4105,8 +4106,8 @@ router.get('/flows/assignments', async (req, res) => {
 router.put('/flows/assignments', async (req, res) => {
   try {
     const { type, flow_id, flow_name } = req.body;
-    if (!type || !['delivery', 'feedback'].includes(type)) return res.status(400).json({ error: 'type must be delivery or feedback' });
-    const settingId = type === 'delivery' ? 'whatsapp_flow' : 'feedback_flow';
+    if (!type || !['delivery', 'feedback', 'dispute'].includes(type)) return res.status(400).json({ error: 'type must be delivery, feedback or dispute' });
+    const settingId = type === 'delivery' ? 'whatsapp_flow' : type === 'dispute' ? 'dispute_flow' : 'feedback_flow';
     await col('platform_settings').updateOne(
       { _id: settingId },
       { $set: { flow_id, flow_name: flow_name || null, flow_status: 'PUBLISHED', updated_at: new Date() }, $setOnInsert: { created_at: new Date() } },

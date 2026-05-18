@@ -3940,13 +3940,13 @@ const handleNfmReply = async (nfmReply, customer, conv, waAccount) => {
   }
 
   // ── Issue Flow response (post-delivery issue / dispute) ──
-  // Env-gated: inert until ISSUE_FLOW_ID is configured (Tarun adds it
-  // after creating the Flow in Meta). Discriminated by the issue_category
-  // field — Meta's nfm_reply does not carry the Flow id, and the issue
-  // Flow's flow_token is the bare orderId, so issue_category presence is
-  // the reliable signal. MUST precede the generic flow_token branch
-  // below, else handleFlowResponse (rating/feedback) would swallow it.
-  if (process.env.ISSUE_FLOW_ID && responseData.issue_category !== undefined) {
+  // Discriminated by the issue_category field — Meta's nfm_reply does
+  // not carry the Flow id, and the issue Flow's flow_token is the bare
+  // orderId, so issue_category presence is the reliable signal (the
+  // env gate was dropped; the Flow id is hardcoded in template.js).
+  // MUST precede the generic flow_token branch below, else
+  // handleFlowResponse (rating/feedback) would swallow it.
+  if (responseData.issue_category !== undefined) {
     await handleIssueFlowResponse(responseData, customer, conv, waAccount);
     return;
   }
