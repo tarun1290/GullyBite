@@ -351,6 +351,14 @@ async function applyProroutingState(order, statusRaw, eventBody = {}) {
       }
     }
 
+    // Stamp the rider-pickup moment for SLA analytics. First-write-wins
+    // ($exists:false) so a duplicate / retried picked-up webhook can't
+    // push the timestamp later and skew the dispatch / transit SLA spans.
+    await col('orders').findOneAndUpdate(
+      { _id: order._id, rider_pickup_at: { $exists: false } },
+      { $set: { rider_pickup_at: new Date(), updated_at: new Date() } },
+    );
+
     // Dual-write logistics timings for analytics. Skip any field we
     // can't compute — null writes would poison the "no data" checks.
     const o = eventBody?.order || {};
@@ -468,9 +476,16 @@ async function applyProroutingState(order, statusRaw, eventBody = {}) {
           'RTO Initiated for order',
           `Order could not be delivered and RTO has been initiated. GullyBite Order ID: ${order._id}`
         );
+        // Additive: write the vendor-neutral lsp_* fields alongside the
+        // existing prorouting_* fields (kept for backward compat with
+        // old docs). lsp_escalation_deadline = raised_at + 12h, computed
+        // by the adapter. Inline require avoids any load-order coupling.
+        const lspFields = require('./delivery/lspAdapter').getLspIssueFields('prorouting', {
+          issue_id, issue_state, raised_at: new Date(),
+        });
         await col('orders').updateOne(
           { _id: order._id },
-          { $set: { prorouting_issue_id: issue_id, prorouting_issue_state: issue_state, updated_at: new Date() } }
+          { $set: { prorouting_issue_id: issue_id, prorouting_issue_state: issue_state, ...lspFields, updated_at: new Date() } }
         );
       } catch (issueErr) {
         if (issueErr?.name === 'DuplicateIssueError') {
@@ -497,6 +512,24 @@ async function applyProroutingState(order, statusRaw, eventBody = {}) {
       }).catch((e) => log.warn({ err: e?.message }, 'rto-initiated sendStatusUpdate failed'));
     }
 
+    return { previousStatus, currentStatus: statusRaw, updated: true };
+  }
+
+  // TODO(3PL SOP): Prorouting "RTO disposed / returned-and-destroyed"
+  // event. The exact status string is UNCONFIRMED — Prorouting only
+  // documents 'rto-initiated' and 'rto-delivered' today; the disposed
+  // event is expected to be 'rto-disposed' / 'rto-returned' /
+  // 'order-rto-disposed'. When confirmed, replace this no-op with:
+  //   await orderSvc.updateStatus(order._id, 'RTO_DISPOSED')  (or
+  //   transitionOrder(order._id, 'RTO_DISPOSED', {...})).
+  // That ALSO requires adding 'RTO_DISPOSED' to ORDER_STATES and a
+  // TRANSITIONS edge (RTO_COMPLETE/RTO_IN_PROGRESS → RTO_DISPOSED) in
+  // core/orderStateEngine.js — only STATE_TIMESTAMP carries it now.
+  if (status === 'rto-disposed' || status === 'rto-returned' || status === 'order-rto-disposed') {
+    log.info(
+      { orderId: order._id, status: statusRaw },
+      'rto-disposed event received — no-op stub (RTO_DISPOSED transition not yet wired; see TODO)',
+    );
     return { previousStatus, currentStatus: statusRaw, updated: true };
   }
 

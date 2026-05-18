@@ -63,6 +63,14 @@ const JOB_TYPES = {
   // branch. Handler is idempotent: petpoojaOrderService stamps
   // petpooja_order_id on success, and re-runs short-circuit on that.
   PETPOOJA_PUSH: 'petpooja_push',
+  // Post-delivery issue/dispute prompt — enqueued by
+  // core/orderStateEngine.js 90s after DELIVERED (guarded by
+  // ISSUE_FLOW_ID). Key === value (lowercase) is deliberate: enqueue()
+  // guards on JOB_TYPES[type] and HANDLERS is keyed by [JOB_TYPES.x]
+  // (the value), so dispatch only works when key and value match — the
+  // PETPOOJA_PUSH key≠value entry above is a latent mismatch we do NOT
+  // replicate. The lowercase string is the Part-5 job-type contract.
+  send_issue_flow_template: 'send_issue_flow_template',
 };
 
 const MAX_ATTEMPTS = 5;
@@ -535,6 +543,84 @@ async function _handleFeedbackRequest(payload) {
   log.info({ orderId, orderNumber: order.order_number }, 'FEEDBACK_REQUEST sent');
 }
 
+// Post-delivery issue/dispute prompt — fires 90s after DELIVERED
+// (enqueued by core/orderStateEngine.js, ISSUE_FLOW_ID-guarded).
+// Sends order_issue_report_v1: BODY {{1}} = restaurant name + a FLOW
+// button carrying flow_token=orderId. The submitted Flow returns as an
+// nfm_reply → handleIssueFlowResponse (webhooks/whatsapp.js) →
+// issueSvc.createIssue. Idempotency: jobId `issue-flow-${orderId}`
+// collapses duplicate enqueues; the status!==DELIVERED short-circuit
+// covers a rollback in the 90s window. Mirrors _handleFeedbackRequest
+// (WA-account/token resolution, recipient fallback) and the
+// services/whatsapp.js sendCouponTemplate body+button param shape.
+async function _handleSendIssueFlowTemplate(payload) {
+  const orderId = payload?.orderId;
+  if (!orderId) {
+    log.warn({ payload }, 'send_issue_flow_template: missing orderId — skipping');
+    return;
+  }
+
+  const order = await col('orders').findOne(
+    { _id: orderId },
+    { projection: {
+        _id: 1, order_number: 1, status: 1, restaurant_id: 1, branch_id: 1,
+        customer_id: 1, receiver_phone: 1, business_name: 1,
+    } },
+  );
+  if (!order) {
+    log.warn({ orderId }, 'send_issue_flow_template: order not found — skipping');
+    return;
+  }
+  if (order.status !== 'DELIVERED') {
+    log.info({ orderId, status: order.status }, 'send_issue_flow_template: order not in DELIVERED — skipping');
+    return;
+  }
+
+  const metaConfig = require('../config/meta');
+  const waAcc = await col('whatsapp_accounts').findOne({
+    restaurant_id: order.restaurant_id, is_active: true,
+  });
+  const waToken = metaConfig.systemUserToken || waAcc?.access_token;
+  // Primary WABA phone_number_id — NOT marketing_wa_phone_number_id.
+  if (!waAcc?.phone_number_id || !waToken) {
+    log.warn({ orderId, restaurantId: order.restaurant_id }, 'send_issue_flow_template: no active WA account or token — skipping');
+    return;
+  }
+
+  // Recipient wa id — order.receiver_phone, else the customers doc
+  // (wa_phone, then bsuid) keyed by order.customer_id. Identical
+  // resolution to _handleFeedbackRequest.
+  let toId = order.receiver_phone || null;
+  if (!toId && order.customer_id) {
+    const customer = await col('customers').findOne({ _id: order.customer_id });
+    toId = customer?.wa_phone || customer?.bsuid || null;
+  }
+  if (!toId) {
+    log.warn({ orderId }, 'send_issue_flow_template: no recipient wa id — skipping');
+    return;
+  }
+
+  // Template send: BODY {{1}} + FLOW button. componentParams shape
+  // mirrors services/whatsapp.js sendCouponTemplate (body params + a
+  // special sub_type button). flow_token = orderId so the returned
+  // nfm_reply links back to this order. `language` MUST match the
+  // order_issue_report_v1 registered language (Part 4 = 'en').
+  const templateSvc = require('../services/template');
+  const components = [
+    { type: 'body', parameters: [{ type: 'text', text: String(order.business_name || 'the restaurant') }] },
+    {
+      type: 'button',
+      sub_type: 'flow',
+      index: '0',
+      parameters: [{ type: 'action', action: { flow_token: String(order._id) } }],
+    },
+  ];
+  await templateSvc.sendTemplateMessage(
+    waAcc.phone_number_id, toId, 'order_issue_report_v1', 'en_US', components,
+  );
+  log.info({ orderId, orderNumber: order.order_number }, 'send_issue_flow_template sent');
+}
+
 // Welcome journey — durable replacement for the 2h setTimeout in the
 // Razorpay payment-success path. Idempotency: journeyExecutor.executeJourney
 // checks for an existing journey row before sending; a duplicate fire after
@@ -675,6 +761,7 @@ const HANDLERS = {
   [JOB_TYPES.CART_RECOVERY]: _handleCartRecovery,
   [JOB_TYPES.FEEDBACK_ROUTING]: _handleFeedbackRouting,
   [JOB_TYPES.PETPOOJA_PUSH]: _handlePetpoojaPush,
+  [JOB_TYPES.send_issue_flow_template]: _handleSendIssueFlowTemplate,
 };
 
 // ─── WORKER LOOP ──────────────────────────────────────────────

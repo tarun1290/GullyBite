@@ -3815,6 +3815,93 @@ const linkPhoneAndResumeOrder = async (phone, customer, conv, waAccount) => {
   }
 };
 
+// ─── ISSUE FLOW HANDLER (post-delivery issue / dispute) ────
+// Consolidated onto the existing issues subsystem (services/issues.js +
+// the `issues` collection): the issue Flow's nfm_reply is mapped into
+// issueSvc.createIssue, which owns issue_number, routing, SLA, threads.
+// Signature mirrors the sibling nfm handlers (responseData, customer,
+// conv, waAccount) — not the Part-3 (waId, flowToken, payload, db)
+// sketch — to match this file's convention and reuse customerIdentity /
+// col / issueSvc. Wrapped end-to-end so a failure never throws into the
+// webhook. Part-3 Flow categories are mapped to the existing issues.js
+// vocabulary so ROUTING_MAP / PRIORITY_MAP yield the right routed_to.
+const ISSUE_FLOW_CATEGORY_MAP = {
+  food_quality:       'food_quality',
+  packaging:          'packaging',
+  wrong_order_placed: 'wrong_order',
+  late_delivery:      'delivery_late',
+  not_delivered:      'delivery_not_received',
+  payment_issue:      'payment_failed',
+};
+
+const handleIssueFlowResponse = async (responseData, customer, conv, waAccount) => {
+  const pid   = waAccount.phone_number_id;
+  const token = waAccount.access_token;
+  const to    = customerIdentity.resolveRecipient(customer);
+  try {
+    // Part 4 sends the issue Flow with flow_token = orderId.
+    const orderId = String(responseData.flow_token || '').trim();
+    if (!orderId) {
+      log.warn({ wa_phone: customer.wa_phone || customer.bsuid }, 'issue flow: missing flow_token (orderId)');
+      await wa.sendText(pid, token, to,
+        'Sorry, we could not link this to an order. Please try again from your order message.'
+      ).catch(() => {});
+      return;
+    }
+
+    const order = await col('orders').findOne({ _id: orderId });
+    if (!order) {
+      log.warn({ orderId }, 'issue flow: order not found for flow_token');
+      await wa.sendText(pid, token, to,
+        'Sorry, we could not find that order. Please contact support if this continues.'
+      ).catch(() => {});
+      return;
+    }
+
+    const rawCategory = String(responseData.issue_category || '').trim();
+    const category    = ISSUE_FLOW_CATEGORY_MAP[rawCategory] || 'general';
+    const description = String(responseData.issue_description || '').trim();
+
+    const issue = await issueSvc.createIssue({
+      customerId:    order.customer_id,
+      customerName:  customer?.name || order.customer_name || null,
+      customerPhone: customer?.wa_phone || order.customer_phone || null,
+      orderId:       order._id,
+      orderNumber:   order.order_number || null,
+      restaurantId:  order.restaurant_id,
+      branchId:      order.branch_id || null,
+      category,
+      description,
+      source:        'whatsapp',
+    });
+
+    // Acknowledgement copy keyed off the routing the issues engine
+    // computed (routed_to), with the not-delivered priority special case.
+    let ack;
+    if (issue.routed_to === 'restaurant') {
+      ack = "We've flagged your concern with the restaurant. Expect a resolution within 24 hours.";
+    } else if (category === 'delivery_not_received') {
+      ack = 'This is being treated as priority. Our team will contact you within 2 hours.';
+    } else {
+      ack = 'Our team is reviewing this and will get back to you within 24 hours.';
+    }
+
+    log.info(
+      { orderId, issueNumber: issue.issue_number, category, routedTo: issue.routed_to },
+      'issue flow: issue created',
+    );
+    await wa.sendText(pid, token, to, ack).catch(() => {});
+  } catch (err) {
+    log.error(
+      { err: err?.message, wa_phone: customer?.wa_phone || customer?.bsuid, flow_token: responseData?.flow_token },
+      'handleIssueFlowResponse failed',
+    );
+    await wa.sendText(pid, token, to,
+      "Sorry, we couldn't record your issue. Please try again in a moment."
+    ).catch(() => {});
+  }
+};
+
 // ─── NFM REPLY HANDLER (Address Forms + WhatsApp Flows) ────
 // [WhatsApp2026] Handles nfm_reply interactive type from:
 //   1. Native address_message forms → structured address fields
@@ -3849,6 +3936,18 @@ const handleNfmReply = async (nfmReply, customer, conv, waAccount) => {
       || responseData.action === 'new_address'
       || responseData.action === 'add_address') {
     await handleDeliveryFlowResponse(responseData, customer, conv, waAccount);
+    return;
+  }
+
+  // ── Issue Flow response (post-delivery issue / dispute) ──
+  // Env-gated: inert until ISSUE_FLOW_ID is configured (Tarun adds it
+  // after creating the Flow in Meta). Discriminated by the issue_category
+  // field — Meta's nfm_reply does not carry the Flow id, and the issue
+  // Flow's flow_token is the bare orderId, so issue_category presence is
+  // the reliable signal. MUST precede the generic flow_token branch
+  // below, else handleFlowResponse (rating/feedback) would swallow it.
+  if (process.env.ISSUE_FLOW_ID && responseData.issue_category !== undefined) {
+    await handleIssueFlowResponse(responseData, customer, conv, waAccount);
     return;
   }
 

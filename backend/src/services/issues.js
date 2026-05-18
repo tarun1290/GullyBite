@@ -4,6 +4,7 @@
 
 const { col, newId } = require('../config/database');
 const { logActivity } = require('./activityLog');
+const { isRefundEligible } = require('./delivery/lspAdapter');
 
 // ─── CATEGORY → ROUTING MAP ─────────────────────────────────────────
 const ROUTING_MAP = {
@@ -24,6 +25,14 @@ const ROUTING_MAP = {
   coupon_issue:           'admin_financial',
   general:                'restaurant',
   app_issue:              'admin',
+  // 3PL SOP delivery-agent faults → admin_delivery so they surface in
+  // the admin queue (listIssues/getIssueStats filter routed_to ∈
+  // {admin, admin_delivery, admin_financial}).
+  delivered_not_marked:   'admin_delivery',
+  fake_pickup:            'admin_delivery',
+  food_spillage:          'admin_delivery',
+  rude_agent:             'admin_delivery',
+  rider_runaway:          'admin_delivery',
 };
 
 const PRIORITY_MAP = {
@@ -44,6 +53,11 @@ const PRIORITY_MAP = {
   coupon_issue:           'low',
   app_issue:              'low',
   wrong_address:          'medium',
+  delivered_not_marked:   'high',
+  fake_pickup:            'high',
+  food_spillage:          'high',
+  rude_agent:             'high',
+  rider_runaway:          'high',
 };
 
 const SLA_HOURS = { critical: 2, high: 6, medium: 24, low: 48 };
@@ -95,6 +109,20 @@ async function createIssue({
   const slaHours = SLA_HOURS[priority];
   const slaDeadline = new Date(Date.now() + slaHours * 60 * 60 * 1000);
 
+  // Refund eligibility per the dispatching 3PL's SOP. Resolve the
+  // order's lsp_provider (null on pre-3PL-SOP orders → isRefundEligible
+  // fail-open default = true). Never block issue creation on this read.
+  let lspProvider = null;
+  if (orderId) {
+    try {
+      const ord = await col('orders').findOne(
+        { _id: orderId }, { projection: { lsp_provider: 1 } },
+      );
+      lspProvider = ord?.lsp_provider || null;
+    } catch (_) { /* fail-open — default eligibility applies */ }
+  }
+  const refundEligible = isRefundEligible(lspProvider, category);
+
   const now = new Date();
   const issue = {
     _id: newId(),
@@ -110,6 +138,7 @@ async function createIssue({
     subcategory: subcategory || null,
     priority,
     routed_to: routedTo,
+    refund_eligible: refundEligible,
     description: description || '',
     media: media || [],
     status: 'open',

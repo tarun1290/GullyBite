@@ -113,6 +113,12 @@ const STATE_TIMESTAMP = {
   NO_DELIVERY_AVAILABLE:  'no_delivery_at',
   RTO_IN_PROGRESS: 'rto_initiated_at',
   RTO_COMPLETE:    'rto_completed_at',
+  // 3PL SOP: order returned then disposed/destroyed by the 3PL. NOTE:
+  // RTO_DISPOSED is intentionally NOT yet added to ORDER_STATES /
+  // TRANSITIONS — a real transitionOrder(…, 'RTO_DISPOSED') call also
+  // needs those, wired when Prorouting's disposed event is confirmed
+  // (see the no-op stub in proroutingState.js).
+  RTO_DISPOSED:    'rto_disposed_at',
 };
 
 // ─── TRANSITION VALIDATION ──────────────────────────────────
@@ -138,6 +144,19 @@ function isValidTransition(currentState, nextState) {
     return { valid: false, reason: `Transition ${currentState} → ${nextState} is not allowed` };
   }
   return { valid: true };
+}
+
+// ─── SLA SPAN HELPER ────────────────────────────────────────
+// Whole-minute span from `a` → `b`. Returns null (an explicit
+// "not measurable", distinct from 0) when either endpoint is
+// missing/invalid or the span is not strictly positive.
+function _slaMin(a, b) {
+  if (!a || !b) return null;
+  const ta = new Date(a).getTime();
+  const tb = new Date(b).getTime();
+  if (Number.isNaN(ta) || Number.isNaN(tb)) return null;
+  const m = Math.round((tb - ta) / 60000);
+  return m > 0 ? m : null;
 }
 
 // ─── TRANSITION ORDER ───────────────────────────────────────
@@ -204,6 +223,52 @@ async function transitionOrder(orderId, nextState, opts = {}) {
       return current;
     }
     throw new Error(`Order ${orderId} state changed concurrently (expected ${currentState}, found ${current?.status})`);
+  }
+
+  // 5b. SLA spans (DELIVERED only). delivered_at was just stamped on
+  // `updated` (returnDocument:'after'), so the post-update doc carries
+  // every endpoint. Persisted via a follow-up $set on the same doc and
+  // mirrored onto `updated` so the bus payload / return value match the
+  // DB. Resilient: a failed analytics write must never unwind a
+  // transition that already atomically committed above.
+  if (nextState === 'DELIVERED') {
+    const slaPrep     = _slaMin(updated.confirmed_at,    updated.packed_at);
+    const slaDispatch = _slaMin(updated.packed_at,       updated.rider_pickup_at);
+    const slaTransit  = _slaMin(updated.rider_pickup_at, updated.delivered_at);
+    updated.sla_prep_min     = slaPrep;
+    updated.sla_dispatch_min = slaDispatch;
+    updated.sla_transit_min  = slaTransit;
+    await col('orders').updateOne(
+      { _id: orderId },
+      { $set: {
+          sla_prep_min:     slaPrep,
+          sla_dispatch_min: slaDispatch,
+          sla_transit_min:  slaTransit,
+          updated_at:       new Date(),
+        } },
+    ).catch(e => log.warn({ err: e?.message, orderId }, 'SLA span write failed'));
+
+    // ─── Post-delivery Issue Flow enqueue ──────────────────────
+    // 90s after DELIVERED, prompt the customer with the issue/dispute
+    // Flow template (order_issue_report_v1). Env-gated: dev/staging
+    // without ISSUE_FLOW_ID skip silently — the FLOW button needs a
+    // real published Flow id anyway. The `issue-flow-<orderId>` jobId
+    // makes the enqueue idempotent across duplicate transitions. The
+    // handler re-checks status at fire time. Fire-and-forget — must
+    // never block or unwind the DELIVERED transition. Mirrors the
+    // CART_RECOVERY-on-EXPIRED enqueue pattern below.
+    if (process.env.ISSUE_FLOW_ID) {
+      try {
+        const { enqueue, JOB_TYPES: JOBS } = require('../queue/postPaymentJobs');
+        enqueue(
+          JOBS.send_issue_flow_template,
+          { orderId },
+          { delayMs: 90000, jobId: `issue-flow-${orderId}` },
+        ).catch((err) => log.warn({ err: err?.message, orderId }, 'send_issue_flow_template enqueue failed'));
+      } catch (err) {
+        log.warn({ err: err?.message, orderId }, 'send_issue_flow_template enqueue dispatch failed');
+      }
+    }
   }
 
   // 6. Audit log (fire-and-forget)

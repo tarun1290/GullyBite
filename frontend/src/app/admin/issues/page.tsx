@@ -43,11 +43,14 @@ const TABS: ReadonlyArray<{ key: string; label: string }> = [
 
 const CATEGORIES: ReadonlyArray<readonly [string, string]> = [
   ['', 'All Categories'],
-  ['food_quality', 'Food Quality'], ['missing_item', 'Missing Item'],
+  ['food_quality', 'Food Quality'], ['packaging', 'Packaging'], ['missing_item', 'Missing Item'],
   ['wrong_order', 'Wrong Order'], ['delivery_late', 'Late Delivery'],
   ['delivery_not_received', 'Not Received'], ['delivery_damaged', 'Damaged'],
   ['wrong_charge', 'Wrong Charge'], ['refund_request', 'Refund'],
   ['payment_failed', 'Payment Failed'], ['general', 'General'],
+  ['delivered_not_marked', 'Delivered Not Marked'], ['fake_pickup', 'Fake Pickup'],
+  ['food_spillage', 'Food Spillage'], ['rude_agent', 'Rude Agent'],
+  ['rider_runaway', 'Rider Runaway'],
 ];
 
 const PRIORITIES: ReadonlyArray<readonly [string, string]> = [
@@ -100,6 +103,7 @@ interface OrderInfo {
 
 interface AdminIssueDetail extends AdminIssue {
   description?: string;
+  refund_eligible?: boolean;
   messages?: IssueMessage[];
   approval_status?: string;
   _payment?: PaymentInfo;
@@ -702,6 +706,14 @@ export default function AdminIssuesPage() {
                 {refundOpen && (
                   <div className={INLINE_FORM_CLS}>
                     <div className="font-semibold mb-1.5">Issue refund</div>
+                    {detail.refund_eligible === false && (
+                      <div className="notice warn mb-2">
+                        <div className="notice-ico">⚠️</div>
+                        <div className="notice-body">
+                          Not refund-eligible per delivery SOP. Admin override allowed.
+                        </div>
+                      </div>
+                    )}
                     <label className={LBL_CLS}>Refund amount (₹) — leave blank for full order</label>
                     <input
                       type="number"

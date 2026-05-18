@@ -27,6 +27,15 @@ interface DisputeRow {
   prorouting_issue_state?: string;
   prorouting_issue_raised_at?: string;
   prorouting_state?: string;
+  lsp_provider?: string;
+  lsp_issue_id?: string;
+  lsp_issue_state?: string;
+  lsp_issue_raised_at?: string;
+  lsp_escalation_deadline?: string;
+  debit_at_risk?: boolean;
+  sla_prep_min?: number;
+  sla_dispatch_min?: number;
+  sla_transit_min?: number;
   delivered_at?: string;
   status?: string;
 }
@@ -50,6 +59,26 @@ function fmtTime(iso?: string): string {
     });
   } catch {
     return iso;
+  }
+}
+
+// Escalation deadline — time-only (HH:MM) when it falls today, else
+// includes the date. '—' when absent or unparseable.
+function fmtDeadline(iso?: string): string {
+  if (!iso) return '—';
+  const ts = Date.parse(iso);
+  if (Number.isNaN(ts)) return '—';
+  const d = new Date(ts);
+  const now = new Date();
+  const sameDay = d.getFullYear() === now.getFullYear()
+    && d.getMonth() === now.getMonth()
+    && d.getDate() === now.getDate();
+  try {
+    return d.toLocaleString('en-IN', sameDay
+      ? { hour: '2-digit', minute: '2-digit' }
+      : { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+  } catch {
+    return '—';
   }
 }
 
@@ -118,21 +147,26 @@ export default function AdminDeliveryDisputesPage() {
                   <th className={TH_CLS}>Order #</th>
                   <th className={TH_CLS}>Restaurant</th>
                   <th className={TH_CLS}>Branch</th>
+                  <th className={TH_CLS}>Provider</th>
                   <th className={TH_CLS}>Issue ID</th>
                   <th className={TH_CLS}>State</th>
                   <th className={TH_CLS}>Raised</th>
+                  <th className={TH_CLS}>Escalation Deadline</th>
                   <th className={TH_CLS}>Delivery State</th>
+                  <th className={TH_CLS}>Prep (min)</th>
+                  <th className={TH_CLS}>Dispatch (min)</th>
+                  <th className={TH_CLS}>Transit (min)</th>
                   <th className={TH_CLS}>Delivered</th>
                 </tr>
               </thead>
               <tbody>
                 {loading ? (
-                  <tr><td colSpan={8} className={EMPTY_CLS}>Loading…</td></tr>
+                  <tr><td colSpan={13} className={EMPTY_CLS}>Loading…</td></tr>
                 ) : orders.length === 0 ? (
-                  <tr><td colSpan={8} className={EMPTY_CLS}>No disputes raised yet</td></tr>
+                  <tr><td colSpan={13} className={EMPTY_CLS}>No disputes raised yet</td></tr>
                 ) : (
                   orders.map((o) => {
-                    const issueState = o.prorouting_issue_state || 'OPEN';
+                    const issueState = o.lsp_issue_state || o.prorouting_issue_state || 'OPEN';
                     const stateColor = ISSUE_STATE_COLORS[issueState] || 'var(--gb-slate-500)';
                     return (
                       <tr key={o.id || o._id || o.order_number} className="border-b border-rim">
@@ -152,8 +186,13 @@ export default function AdminDeliveryDisputesPage() {
                         </td>
                         <td className={TD_CLS}>{o.business_name || '—'}</td>
                         <td className={TD_CLS}>{o.branch_name || '—'}</td>
+                        <td className={TD_CLS}>
+                          <span className="inline-block py-0.5 px-1.5 rounded-sm text-xs border border-rim text-dim uppercase">
+                            {o.lsp_provider || 'prorouting'}
+                          </span>
+                        </td>
                         <td className={`${TD_CLS} text-xs mono`}>
-                          {o.prorouting_issue_id || '—'}
+                          {o.lsp_issue_id || o.prorouting_issue_id || '—'}
                         </td>
                         <td className={TD_CLS}>
                           <span
@@ -166,13 +205,24 @@ export default function AdminDeliveryDisputesPage() {
                           >
                             {issueState}
                           </span>
+                          {o.debit_at_risk === true && (
+                            <span className="ml-1.5 inline-flex items-center py-0.5 px-1.5 rounded-sm text-xs border border-amber-500 text-dim">
+                              ⚠ Debit at Risk
+                            </span>
+                          )}
                         </td>
                         <td className={`${TD_CLS} text-dim text-xs`}>
-                          {fmtTime(o.prorouting_issue_raised_at)}
+                          {fmtTime(o.lsp_issue_raised_at || o.prorouting_issue_raised_at)}
+                        </td>
+                        <td className={`${TD_CLS} text-dim text-xs`}>
+                          {fmtDeadline(o.lsp_escalation_deadline)}
                         </td>
                         <td className={`${TD_CLS} text-xs`}>
                           {o.prorouting_state || '—'}
                         </td>
+                        <td className={`${TD_CLS} text-xs text-right`}>{o.sla_prep_min ?? '—'}</td>
+                        <td className={`${TD_CLS} text-xs text-right`}>{o.sla_dispatch_min ?? '—'}</td>
+                        <td className={`${TD_CLS} text-xs text-right`}>{o.sla_transit_min ?? '—'}</td>
                         <td className={`${TD_CLS} text-dim text-xs`}>
                           {fmtTime(o.delivered_at)}
                         </td>

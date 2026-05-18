@@ -161,6 +161,18 @@ async function createTask(pickup, drop, orderDetails = {}, quoteId = null) {
   );
   log.info({ ms: Date.now() - t0, prorouting_order_id, gullybiteOrderId }, 'createTask ok');
 
+  // Stamp the dispatching 3PL on the order. Fire-and-forget — a failed
+  // write must NEVER block dispatch. gullybiteOrderId is the order _id.
+  try {
+    const { col } = require('../../../config/database');
+    col('orders').findOneAndUpdate(
+      { _id: gullybiteOrderId },
+      { $set: { lsp_provider: 'prorouting', updated_at: new Date() } },
+    ).catch((e) => log.warn({ err: e?.message, gullybiteOrderId }, 'lsp_provider write failed'));
+  } catch (e) {
+    log.warn({ err: e?.message, gullybiteOrderId }, 'lsp_provider write dispatch failed');
+  }
+
   // /createasync is async upstream — the actual rider assignment +
   // tracking URL arrive via the status webhook (webhookProrouting.js)
   // minutes later. estimatedMins is best-effort from Prorouting's

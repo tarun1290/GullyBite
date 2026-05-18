@@ -493,6 +493,43 @@ const DEFAULT_TEMPLATES = [
       { type: 'BUTTONS', buttons: [{ type: 'QUICK_REPLY', text: 'Order Now' }] },
     ],
   },
+
+  // ─── ISSUE REPORT (UTILITY, post-delivery) ──────────────────
+  // Sent after DELIVERED to invite a post-delivery issue/dispute. It is
+  // a UTILITY transactional template but carries the displayName/
+  // useCase/bodyNamed/variables wrapper for shape-parity (UTILITY is
+  // NOT mirrored to campaign_templates, so those fields are inert here).
+  // The FLOW button's flow_id reads process.env.ISSUE_FLOW_ID at module
+  // load: until that env var is set to a PUBLISHED Meta Flow id, Meta
+  // rejects this single create (logged + skipped, non-fatal; the loop
+  // continues and it is retried on the next boot once the env is set).
+  // The submitted nfm_reply is handled by handleIssueFlowResponse in
+  // webhooks/whatsapp.js → issueSvc.createIssue.
+  {
+    name: 'order_issue_report_v1',
+    displayName: 'Order Issue Report',
+    useCase: 'issue_report',
+    category: 'UTILITY',
+    language: 'en_US',
+    bodyNamed: "Your order from {{restaurant_name}} has been delivered! 🎉 We hope you enjoyed it. If anything wasn't right, we're here to help — tap below to let us know.",
+    variables: [
+      { name: 'restaurant_name', label: 'Restaurant Name', source: 'auto', required: true, example: 'Spice Garden' },
+    ],
+    buttonText: 'Report an Issue',
+    components: [
+      {
+        type: 'BODY',
+        text: "Your order from {{1}} has been delivered! 🎉 We hope you enjoyed it. If anything wasn't right, we're here to help — tap below to let us know.",
+        example: { body_text: [['Spice Garden']] },
+      },
+      {
+        type: 'BUTTONS',
+        buttons: [
+          { type: 'FLOW', text: 'Report an Issue', flow_id: process.env.ISSUE_FLOW_ID, flow_action: 'navigate', navigate_screen: 'ISSUE_CATEGORY' },
+        ],
+      },
+    ],
+  },
 ];
 
 // Build the campaign_templates row for a MARKETING entry. metaTemplateId
@@ -712,6 +749,15 @@ const DEFAULT_MAPPINGS = [
       { position: 1, source: 'order.customer_name', fallback: 'Customer' },
       { position: 2, source: 'order.order_number' },
       { position: 3, source: 'order.total_rs', format: 'currency' },
+    ],
+    is_active: true,
+  },
+  {
+    event: 'order_issue_report',
+    template_name: 'order_issue_report_v1',
+    description: 'Post-delivery issue/dispute prompt (Report an Issue Flow button)',
+    variables: [
+      { position: 1, source: 'order.business_name', fallback: 'the restaurant' },
     ],
     is_active: true,
   },

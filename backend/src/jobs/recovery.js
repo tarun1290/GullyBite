@@ -163,12 +163,45 @@ async function cleanupExpiredOrders() {
   return { scanned: expired.length, expired: done };
 }
 
+// ─── JOB 4: flag_debit_at_risk ───────────────────────────────────
+// 3PL SOP: when an open LSP issue's escalation deadline is within 2h
+// and it's still unresolved, the platform risks eating the debit if ops
+// don't escalate in time. Flag the order so the disputes dashboard
+// surfaces it (debit_at_risk badge). Idempotent — the `debit_at_risk
+// != true` guard means re-runs only touch newly-at-risk rows. Wrapped
+// in try/catch so a bad tick never crashes the scheduler.
+async function flagDebitAtRisk() {
+  try {
+    const horizon = new Date(Date.now() + 2 * 60 * 60 * 1000);
+    // lsp_issue_state casing varies by provider (Prorouting uppercases
+    // RESOLVED/CLOSED) — exclude both cases.
+    const result = await col('orders').updateMany(
+      {
+        lsp_issue_raised_at: { $exists: true, $ne: null },
+        lsp_escalation_deadline: { $lte: horizon },
+        debit_at_risk: { $ne: true },
+        lsp_issue_state: { $nin: ['resolved', 'closed', 'RESOLVED', 'CLOSED'] },
+      },
+      { $set: { debit_at_risk: true, updated_at: new Date() } },
+    );
+    const flagged = result.modifiedCount || 0;
+    if (flagged > 0) {
+      log.info({ flagged }, 'flag_debit_at_risk: orders flagged debit-at-risk');
+    }
+    return { flagged };
+  } catch (err) {
+    log.error({ err: err.message }, 'flag_debit_at_risk failed');
+    return { flagged: 0, error: err.message };
+  }
+}
+
 // ─── SCHEDULER ──────────────────────────────────────────────────
 function scheduleRecovery() {
   cron.schedule('*/5 * * * *',  () => withLock('recover:payments',    recoverStuckPayments).catch(err => log.error({ err: err.message }, 'recoverStuckPayments failed')),    { timezone: 'Asia/Kolkata' });
   cron.schedule('*/10 * * * *', () => withLock('recover:settlements', recoverStuckSettlements).catch(err => log.error({ err: err.message }, 'recoverStuckSettlements failed')), { timezone: 'Asia/Kolkata' });
   cron.schedule('*/15 * * * *', () => withLock('recover:expired',     cleanupExpiredOrders).catch(err => log.error({ err: err.message }, 'cleanupExpiredOrders failed')),     { timezone: 'Asia/Kolkata' });
-  log.info('recovery crons scheduled (payments 5m / settlements 10m / expired 15m)');
+  cron.schedule('*/30 * * * *', () => withLock('recover:debit_at_risk', flagDebitAtRisk).catch(err => log.error({ err: err.message }, 'flag_debit_at_risk failed')), { timezone: 'Asia/Kolkata' });
+  log.info('recovery crons scheduled (payments 5m / settlements 10m / expired 15m / debit_at_risk 30m)');
 }
 
 module.exports = {
@@ -176,6 +209,7 @@ module.exports = {
   recoverStuckPayments,
   recoverStuckSettlements,
   cleanupExpiredOrders,
+  flagDebitAtRisk,
   // exported for tests
   _internals: { STUCK_PAYMENT_MINUTES, STUCK_SETTLEMENT_MINUTES, MAX_SETTLEMENT_RETRIES },
 };
