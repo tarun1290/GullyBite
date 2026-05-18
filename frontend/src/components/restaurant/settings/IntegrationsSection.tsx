@@ -170,9 +170,18 @@ export default function IntegrationsSection() {
   async function handleSync(branch: Branch): Promise<void> {
     setBusyBranchId(branch.id);
     try {
-      await syncIntegration(PLATFORM, branch.id);
+      const res = await syncIntegration(PLATFORM, branch.id);
       await refetchIntegrations();
-      showToast(`Menu sync started for ${branch.name}`, 'success');
+      // Petpooja Sync Now no longer fetches the menu (fetch-menu API is
+      // unsupported — only Push Menu works); the backend returns an
+      // informational `message`. Surface it as an info notice, NOT an
+      // error. Other platforms still return sync stats → generic toast.
+      const msg = (res as { message?: string } | null)?.message;
+      if (msg) {
+        showToast(msg, 'info');
+      } else {
+        showToast(`Menu sync started for ${branch.name}`, 'success');
+      }
     } catch (err: unknown) {
       showToast(errorMessage(err, 'Sync failed'), 'error');
     } finally {
@@ -336,6 +345,9 @@ export default function IntegrationsSection() {
                           Disconnect
                         </button>
                       </div>
+                      <p className="text-dim text-xs mt-2 mb-0">
+                        To sync menu changes, click &lsquo;Menu Trigger&rsquo; in your Petpooja dashboard.
+                      </p>
                     </>
                   ) : (
                     <>

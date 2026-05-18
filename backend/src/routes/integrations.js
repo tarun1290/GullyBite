@@ -216,6 +216,16 @@ router.post('/:platform/:branchId/sync', async (req, res, next) => {
     // must never block or fail the sync response.
     if (platform === 'petpooja') {
       _refreshPetpoojaConfig(req.restaurantId, platform, branchId, integration.outlet_id);
+      // Petpooja's fetch-menu API is NOT available in production — only
+      // Push Menu (their dashboard "Menu Trigger" webhook) syncs the
+      // menu. Sync Now therefore only refreshes pos_config (the
+      // fire-and-forget above) and points the operator at Menu Trigger;
+      // it must NOT call triggerSync → fetchMenu (unsupported by
+      // Petpooja). urbanpiper/dotpe are unaffected — they fall through.
+      return res.json({
+        success: true,
+        message: 'Use Menu Trigger in your Petpooja dashboard to sync menu changes to GullyBite.',
+      });
     }
 
     const result = await triggerSync(platform, integration._id, req.restaurantId, syncMode);
