@@ -52,6 +52,7 @@ import {
   type OrderPaidPayload,
   type OrderUpdatePayload,
   type RiderLocationPayload,
+  type StatsDelta,
 } from '../../hooks/useOrderNotifications';
 
 // Discriminated union of admin-feed events. Stored as the most-recent
@@ -88,6 +89,13 @@ interface SocketContextValue {
   // multiple orders can be progressing through the state machine in
   // parallel.
   lastDeliveryUpdate: DeliveryUpdatePayload | null;
+  // Live-stats delta from the most recent new_paid_order (ref changes
+  // per event). Consumers useEffect on it to optimistically bump
+  // headline counters without an API round-trip.
+  lastDelta: StatsDelta | null;
+  // Monotonic counter: bumps on every new_paid_order /
+  // order_status_changed. Consumers useEffect on it to resync stats.
+  statsVersion: number;
 }
 
 const SocketContext = createContext<SocketContextValue | null>(null);
@@ -195,7 +203,7 @@ export function SocketProvider({ children, isAdmin = false }: SocketProviderProp
     setLastDeliveryUpdate(payload);
   }, []);
 
-  const { connected } = useOrderNotifications({
+  const { connected, lastDelta, statsVersion } = useOrderNotifications({
     onNewOrder,
     onUpdated,
     onPaid,
@@ -223,6 +231,8 @@ export function SocketProvider({ children, isAdmin = false }: SocketProviderProp
         lastMessage,
         lastRiderLocation,
         lastDeliveryUpdate,
+        lastDelta,
+        statsVersion,
       }}
     >
       {children}

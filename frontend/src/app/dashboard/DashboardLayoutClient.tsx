@@ -16,6 +16,8 @@ import { useNewOrderSound } from '../../hooks/useNewOrderSound';
 import { SocketProvider } from '../../components/shared/SocketProvider';
 import LiveIndicator from '../../components/shared/LiveIndicator';
 import NewOrderPopup from '../../components/restaurant/NewOrderPopup';
+import ReAcceptTermsModal from '../../components/shared/ReAcceptTermsModal';
+import { TERMS_VERSION, PRIVACY_VERSION } from '../../lib/constants/legal';
 import type { Restaurant, WabaAccount } from '../../types';
 
 // Restaurant sidebar nav, grouped. Each group renders a small header in
@@ -83,6 +85,26 @@ function DashboardShell({ children }: DashboardShellProps) {
   const pathname = usePathname();
   const { restaurant, loading, refetch } = useRestaurant();
   const [sidebarOpen, setSidebarOpen] = useState<boolean>(false);
+
+  // ── Terms & Privacy re-acceptance gate ──
+  // When the published legal versions are bumped (e.g. the post-Meta-App-
+  // Review transition out of beta), every logged-in restaurant whose
+  // stored consent is older must re-accept before using the dashboard.
+  // Date-formatted versions ("2026-05-18") compare correctly with simple
+  // string inequality. A missing consent (legacy pre-consent account)
+  // also gates. `reAcceptDone` suppresses the modal for the rest of the
+  // session once acceptance succeeds, even if the profile refetch lags.
+  const [reAcceptDone, setReAcceptDone] = useState<boolean>(false);
+  const consent = restaurant?.consent;
+  const needsReAccept =
+    !loading &&
+    !!restaurant &&
+    !reAcceptDone &&
+    (!consent ||
+      !consent.terms_version ||
+      consent.terms_version < TERMS_VERSION ||
+      !consent.privacy_version ||
+      consent.privacy_version < PRIVACY_VERSION);
   // Mount the new-order alarm hook here so the document-level
   // autoplay-unlock listener installs as soon as the dashboard renders
   // — by the time the user navigates to /orders, audio is unlocked.
@@ -127,6 +149,14 @@ function DashboardShell({ children }: DashboardShellProps) {
 
   return (
     <div id="pg-dash" className="flex min-h-screen">
+      <ReAcceptTermsModal
+        open={needsReAccept}
+        onAccepted={() => {
+          setReAcceptDone(true);
+          void refetch();
+        }}
+        onLogout={logout}
+      />
       <Sidebar
         navGroups={navGroups}
         onLogout={logout}

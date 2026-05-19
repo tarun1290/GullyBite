@@ -5,6 +5,7 @@ import type {
   AdminPlatformAbsorbedFee,
   AdminRestaurant,
   AdminRestaurantFaultFee,
+  AdminRestaurantsResponse,
   AdminUser,
   AuthResponse,
   AuthUser,
@@ -314,8 +315,13 @@ export async function testSendTemplate(body: RequestBody): Promise<unknown> {
 
 // ── Restaurants ─────────────────────────────────────────────────────
 
-export async function getAdminRestaurants(): Promise<AdminRestaurant[]> {
-  const { data } = await client.get<AdminRestaurant[]>('/api/admin/restaurants');
+export async function getAdminRestaurants(
+  params: { page?: number; limit?: number } = {},
+): Promise<AdminRestaurantsResponse> {
+  const { page = 1, limit = 20 } = params;
+  const { data } = await client.get<AdminRestaurantsResponse>('/api/admin/restaurants', {
+    params: { page, limit },
+  });
   return data;
 }
 

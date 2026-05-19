@@ -364,8 +364,26 @@ export interface WabaAccount {
   [k: string]: unknown;
 }
 
+// Legal acceptance recorded at account creation (signup). Persisted on
+// the restaurant document; ip_address/user_agent are resolved
+// server-side and never collected in the browser.
+export interface Consent {
+  terms_version: string;
+  privacy_version: string;
+  accepted_at: string;
+  ip_address?: string;
+  user_agent?: string;
+  // Set when this consent was recorded via the re-acceptance flow —
+  // the terms_version that was stored immediately before it.
+  reaccepted_from_version?: string | null;
+}
+
 export interface Restaurant {
   id?: string;
+  consent?: Consent;
+  // Append-only audit trail: every prior consent object the restaurant
+  // accepted, pushed here before consent is overwritten on re-acceptance.
+  consent_history?: Consent[];
   brand_name?: string;
   registered_business_name?: string;
   slug?: string;
@@ -757,6 +775,16 @@ export interface AdminRestaurant {
   campaign_daily_cap?: number | null;
   created_at?: string;
   [k: string]: unknown;
+}
+
+// Paginated envelope returned by GET /api/admin/restaurants. The
+// backend switched from a bare array to this shape when the handler
+// was paginated/batched; getAdminRestaurants() now resolves to this.
+export interface AdminRestaurantsResponse {
+  restaurants: AdminRestaurant[];
+  total: number;
+  page: number;
+  limit: number;
 }
 
 // ─── Penalties ─────────────────────────────────────────────────

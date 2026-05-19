@@ -909,6 +909,7 @@ async function handleOrder(value) {
           // on the Meta checkout payload.
           customerPhone: customerPhone || '',
           totalRs: charges.customer_total_rs,
+          delta: { revenue: charges.customer_total_rs, orderCount: 1 },
           itemCount: orderItems.reduce((s, i) => s + i.quantity, 0),
           items: orderItems.slice(0, 6).map(i => ({ name: i.name, quantity: i.quantity })),
           orderType: isPickup ? 'pickup' : 'delivery',

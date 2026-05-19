@@ -7,6 +7,7 @@ import { useToast } from '../../components/Toast';
 import { emailSignup, googleAuth, manualLogin, getMe } from '../../api/auth';
 import useGoogleAuth from '../../hooks/useGoogleAuth';
 import { routeByStatus } from '../../utils/routeByStatus';
+import { TERMS_VERSION, PRIVACY_VERSION } from '../../lib/constants/legal';
 import type { AuthUser, AuthResponse } from '../../types';
 
 function GoogleIcon() {
@@ -51,6 +52,14 @@ function LoginForm() {
   const [suEmail, setSuEmail] = useState<string>('');
   const [suPw, setSuPw] = useState<string>('');
   const [suPw2, setSuPw2] = useState<string>('');
+  const [accepted, setAccepted] = useState<boolean>(false);
+  const [consentError, setConsentError] = useState<string | null>(null);
+  // Parallel consent for the Google signup button (email flow above is
+  // untouched). The accepted_at timestamp is captured at the moment the
+  // user clicks the Google button and replayed with the post-OAUTH POST.
+  const [googleAccepted, setGoogleAccepted] = useState<boolean>(false);
+  const [googleConsentError, setGoogleConsentError] = useState<string | null>(null);
+  const googleConsentRef = useRef<{ terms_version: string; privacy_version: string; accepted_at: string } | null>(null);
 
   const navigate = (path: string, opts?: { replace?: boolean }) => {
     if (opts?.replace) router.replace(path);
@@ -111,6 +120,10 @@ function LoginForm() {
   const handleSignup = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (busy) return;
+    if (!accepted) {
+      setConsentError('You must accept the Terms of Service and Privacy Policy to continue.');
+      return;
+    }
     if (suPw !== suPw2) {
       toastRef.current('Passwords do not match', 'error');
       return;
@@ -121,6 +134,9 @@ function LoginForm() {
         ownerName: suName.trim(),
         email: suEmail.trim(),
         password: suPw,
+        terms_version: TERMS_VERSION,
+        privacy_version: PRIVACY_VERSION,
+        accepted_at: new Date().toISOString(),
       })) as LooseAuth;
       if (!d?.token) {
         toastRef.current(d?.error || 'Sign up failed', 'error');
@@ -140,7 +156,7 @@ function LoginForm() {
     if (busy) return;
     setBusy(true);
     try {
-      const d = (await googleAuth(code)) as LooseAuth;
+      const d = (await googleAuth(code, googleConsentRef.current ?? undefined)) as LooseAuth;
       if (!d?.token) {
         toastRef.current(d?.error || 'Google sign-in failed', 'error');
         return;
@@ -151,6 +167,7 @@ function LoginForm() {
       toastRef.current(e2?.userMessage || e2?.message || 'Google sign-in failed', 'error');
     } finally {
       setBusy(false);
+      googleConsentRef.current = null;
     }
   };
 
@@ -166,10 +183,25 @@ function LoginForm() {
   });
 
   const onGoogleClick = () => {
+    // Signup mode: same consent gate + inline-error pattern as the email
+    // submit button. Sign-in mode is a login (existing user) and is not
+    // gated. Capture accepted_at at click time and replay it post-OAuth.
+    if (mode === 'signup' && !googleAccepted) {
+      setGoogleConsentError('You must accept the Terms of Service and Privacy Policy to continue.');
+      return;
+    }
     if (!googleReady) {
       toastRef.current('Google sign-in loading — please wait a moment', 'error');
       return;
     }
+    googleConsentRef.current =
+      mode === 'signup'
+        ? {
+            terms_version: TERMS_VERSION,
+            privacy_version: PRIVACY_VERSION,
+            accepted_at: new Date().toISOString(),
+          }
+        : null;
     requestCode();
   };
 
@@ -194,7 +226,32 @@ function LoginForm() {
             </>
           )}
 
-          <button type="button" className="btn-google" onClick={onGoogleClick} disabled={busy || !googleReady}>
+          {mode === 'signup' && (
+            <div className="fld">
+              <label className="flex items-start gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  className="mt-1 shrink-0"
+                  checked={googleAccepted}
+                  onChange={(e) => {
+                    setGoogleAccepted(e.target.checked);
+                    if (e.target.checked) setGoogleConsentError(null);
+                  }}
+                />
+                <span>
+                  I have read and agree to the{' '}
+                  <a href="/terms" target="_blank" rel="noopener noreferrer" className="text-acc underline">Terms of Service</a>
+                  {' '}and{' '}
+                  <a href="/privacy" target="_blank" rel="noopener noreferrer" className="text-acc underline">Privacy Policy</a>.
+                </span>
+              </label>
+              {googleConsentError && (
+                <p className="text-red text-sm mt-1" role="alert">{googleConsentError}</p>
+              )}
+            </div>
+          )}
+
+          <button type="button" className="btn-google" onClick={onGoogleClick} disabled={busy || !googleReady || (mode === 'signup' && !googleAccepted)}>
             <GoogleIcon />
             Continue with Google
           </button>
@@ -224,7 +281,29 @@ function LoginForm() {
                 <label>Confirm Password <span className="req">*</span></label>
                 <input type="password" placeholder="Re-enter password" autoComplete="new-password" required value={suPw2} onChange={onChangeStr(setSuPw2)} />
               </div>
-              <button type="submit" className="btn-full" disabled={busy}>
+              <div className="fld">
+                <label className="flex items-start gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    className="mt-1 shrink-0"
+                    checked={accepted}
+                    onChange={(e) => {
+                      setAccepted(e.target.checked);
+                      if (e.target.checked) setConsentError(null);
+                    }}
+                  />
+                  <span>
+                    I have read and agree to the{' '}
+                    <a href="/terms" target="_blank" rel="noopener noreferrer" className="text-acc underline">Terms of Service</a>
+                    {' '}and{' '}
+                    <a href="/privacy" target="_blank" rel="noopener noreferrer" className="text-acc underline">Privacy Policy</a>.
+                  </span>
+                </label>
+                {consentError && (
+                  <p className="text-red text-sm mt-1" role="alert">{consentError}</p>
+                )}
+              </div>
+              <button type="submit" className="btn-full" disabled={busy || !accepted}>
                 {busy ? (<><span className="spin" /> Creating account…</>) : 'Create Account →'}
               </button>
             </form>

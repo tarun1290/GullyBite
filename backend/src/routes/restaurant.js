@@ -26,6 +26,7 @@ const imgSvc = require('../services/imageUpload');
 const ws = require('../services/websocket');
 const memcache = require('../config/memcache');
 const metaConfig = require('../config/meta');
+const legalConfig = require('../config/legal');
 const { getCached, invalidateCache } = require('../config/cache');
 const { CONFIRMED_ORDER_STATES } = require('../core/orderStateEngine');
 const customerSvc = require('../services/customer.service');
@@ -766,6 +767,65 @@ router.put('/', requireStaffPermission('manage_settings'), async (req, res) => {
     invalidateCache(`restaurant:${req.restaurantId}:profile`);
     invalidateRestaurant(req.restaurantId);
   } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
+});
+
+// POST /api/restaurant/consent/reaccept — Re-acceptance of updated
+// Terms & Privacy by an already-logged-in restaurant (e.g. the
+// post-Meta-App-Review transition out of beta). The dashboard mounts a
+// non-dismissable modal when the stored consent versions are older than
+// the published ones; this records the fresh acceptance.
+//
+// The PREVIOUS consent object is pushed onto consent_history before the
+// new one overwrites it — the historical trail of every version a
+// restaurant has ever accepted is legally important and must never be
+// dropped. IP / user-agent are resolved server-side only (mirrors the
+// signup flow); the client never supplies them.
+router.post('/consent/reaccept', express.json(), async (req, res) => {
+  try {
+    const { terms_version, privacy_version, accepted_at } = req.body;
+
+    if (typeof terms_version !== 'string' || !terms_version.trim() ||
+        typeof privacy_version !== 'string' || !privacy_version.trim())
+      return res.status(400).json({ error: 'terms_version and privacy_version are required' });
+    if (terms_version !== legalConfig.TERMS_VERSION ||
+        privacy_version !== legalConfig.PRIVACY_VERSION)
+      return res.status(400).json({ error: 'Submitted Terms/Privacy versions do not match the current published versions. Please reload and try again.' });
+
+    const restaurant = await col('restaurants').findOne({ _id: req.restaurantId });
+    if (!restaurant) return res.status(404).json({ error: 'Not found' });
+
+    const previousConsent = restaurant.consent || null;
+    const acceptedAt = (typeof accepted_at === 'string' && accepted_at.trim())
+      ? accepted_at.trim()
+      : new Date().toISOString();
+    const ipAddress = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.ip;
+    const newConsent = {
+      terms_version,
+      privacy_version,
+      accepted_at: acceptedAt,
+      ip_address: ipAddress,
+      user_agent: req.headers['user-agent'],
+      reaccepted_from_version: previousConsent ? (previousConsent.terms_version ?? null) : null,
+    };
+
+    // Push the OLD consent into consent_history (full audit trail) and
+    // overwrite the live consent in a single atomic update. Only push
+    // when a prior consent exists — legacy accounts that never had one
+    // simply get their first consent recorded with no history entry.
+    const update = { $set: { consent: newConsent, updated_at: new Date() } };
+    if (previousConsent) update.$push = { consent_history: previousConsent };
+    await col('restaurants').updateOne({ _id: req.restaurantId }, update);
+
+    invalidateCache(`restaurant:${req.restaurantId}:profile`);
+    invalidateRestaurant(req.restaurantId);
+
+    log({ actorType: 'restaurant', actorId: String(req.restaurantId), actorName: req.user?.name || req.user?.email || req.userRole || null, action: 'consent.reaccepted', category: 'auth', description: `Re-accepted Terms ${terms_version} / Privacy ${privacy_version}`, restaurantId: String(req.restaurantId), severity: 'info' });
+
+    return res.json({ success: true, consent: newConsent });
+  } catch (e) {
+    req.log?.error?.({ err: e }, 'consent reaccept failed');
+    return res.status(500).json({ success: false, message: 'Internal server error' });
+  }
 });
 
 // PUT /api/restaurant/settings/order-abbr — Owner updates the
@@ -6205,12 +6265,23 @@ router.post('/orders/:orderId/decline', express.json(), requireApproved, require
 
     // Petpooja POS cancel — fire-and-forget. cancelOrderOnPos guards
     // internally on petpooja_order_id being set, so an unconditional
-    // call here is safe for orders that were never pushed.
-    setImmediate(() => {
-      require('../services/petpoojaOrderService')
-        .cancelOrderOnPos(orderId, reason)
-        .catch(() => {});
-    });
+    // call here is safe for orders that were never pushed. But skip it
+    // entirely once the POS has already moved the order to Dispatched /
+    // Food Ready / Delivered (petpooja_pos_status 4/5/10) — cancelling
+    // there is invalid and would only be a swallowed upstream no-op.
+    // Uses the order object already fetched above (no extra query).
+    if (order.petpooja_pos_status != null && Number(order.petpooja_pos_status) >= 4) {
+      req.log?.warn?.(
+        { orderId, posStatus: order.petpooja_pos_status },
+        'cancelOrderOnPos skipped — petpooja POS already past cancel window (status >= 4)',
+      );
+    } else {
+      setImmediate(() => {
+        require('../services/petpoojaOrderService')
+          .cancelOrderOnPos(orderId, reason)
+          .catch(() => {});
+      });
+    }
 
     res.json({ success: true, status: result?.status || 'REJECTED_BY_RESTAURANT', refundId: result?.refundId || null });
 

@@ -107,7 +107,26 @@ function applyDefaults() {
 // resolves the input itself, otherwise the dataset just keeps its
 // existing backgroundColor.
 function colorToRgba(input: string, alpha: number): string {
-  const hexMatch = input.match(/^#([0-9a-f]{3}|[0-9a-f]{6})$/i);
+  let value = input;
+  // Canvas addColorStop can't resolve CSS custom properties — a dataset
+  // passing e.g. 'var(--gb-wa-500)' as its color makes the gradient
+  // stop invalid (silently broken fill). Resolve the variable against
+  // :root at draw time (client-side — plugin draw hooks only run after
+  // mount) and continue parsing the concrete value. Honors a var()
+  // fallback; falls back to the raw input if resolution isn't possible
+  // (SSR / unknown var) so behavior is never worse than before.
+  const varMatch = value.match(/^\s*var\(\s*(--[\w-]+)\s*(?:,\s*([^)]+))?\)\s*$/i)
+    || value.match(/^\s*(--[\w-]+)\s*$/);
+  const varName = varMatch?.[1];
+  if (varName && typeof document !== 'undefined') {
+    try {
+      const resolved = getComputedStyle(document.documentElement)
+        .getPropertyValue(varName).trim();
+      const fallback = varMatch?.[2]?.trim();
+      value = resolved || fallback || value;
+    } catch { /* keep raw input — no DOM / resolution failed */ }
+  }
+  const hexMatch = value.match(/^#([0-9a-f]{3}|[0-9a-f]{6})$/i);
   if (hexMatch) {
     let h = hexMatch[1] || '';
     if (h.length === 3) h = h.split('').map((c) => c + c).join('');
@@ -116,11 +135,11 @@ function colorToRgba(input: string, alpha: number): string {
     const b = parseInt(h.slice(4, 6), 16);
     return `rgba(${r}, ${g}, ${b}, ${alpha})`;
   }
-  const rgbaMatch = input.match(/^rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/i);
+  const rgbaMatch = value.match(/^rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/i);
   if (rgbaMatch) {
     return `rgba(${rgbaMatch[1]}, ${rgbaMatch[2]}, ${rgbaMatch[3]}, ${alpha})`;
   }
-  return input;
+  return value;
 }
 
 // Loose dataset shape for plugin internals — chart.js's per-type

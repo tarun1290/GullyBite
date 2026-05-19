@@ -8,6 +8,7 @@ import type {
   Campaign,
   CaptainListingStatus,
   CaptainSuggestion,
+  Consent,
   DineInCheckinResponse,
   DineInConfig,
   DineInConfigResponse,
@@ -32,6 +33,24 @@ import type {
 
 export async function getRestaurantProfile(): Promise<Restaurant> {
   const { data } = await client.get<Restaurant>('/api/restaurant');
+  return data;
+}
+
+export interface ReacceptConsentBody {
+  terms_version: string;
+  privacy_version: string;
+  accepted_at: string;
+}
+
+// Records re-acceptance of updated Terms & Privacy for an already
+// logged-in restaurant. IP/user-agent are resolved server-side.
+export async function reacceptConsent(
+  body: ReacceptConsentBody,
+): Promise<{ success: boolean; consent: Consent }> {
+  const { data } = await client.post<{ success: boolean; consent: Consent }>(
+    '/api/restaurant/consent/reaccept',
+    body,
+  );
   return data;
 }
 

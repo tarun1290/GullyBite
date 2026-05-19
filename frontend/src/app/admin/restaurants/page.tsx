@@ -52,6 +52,10 @@ const STATUS_BADGE: Record<string, BadgeMeta> = {
   pending:    { color: 'var(--gb-amber-500)', label: 'Pending' },
 };
 
+// Server-side page size. Matches the getAdminRestaurants() default so
+// the "Page X of Y" math lines up with what the backend returns.
+const PAGE_SIZE = 20;
+
 function fmtInr(n: number | string | null | undefined): string {
   const v = Number(n || 0);
   try {
@@ -68,12 +72,20 @@ export default function AdminRestaurantsPage() {
   const [search, setSearch] = useState<string>('');
   const [rowBusy, setRowBusy] = useState<string | null>(null);
   const [pending, setPending] = useState<PendingAction | null>(null);
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  const [totalCount, setTotalCount] = useState<number>(0);
 
-  const load = async () => {
+  // Backend now returns a paginated envelope ({ restaurants, total,
+  // page, limit }) instead of a bare array. Defaults to the current
+  // page so post-mutation reloads (status/cap/delete/refresh) stay on
+  // the same page; explicit page arg drives prev/next navigation.
+  const load = async (page: number = currentPage) => {
     setLoading(true);
     try {
-      const data = (await getAdminRestaurants()) as RestaurantRowData[] | null;
-      setRows(Array.isArray(data) ? data : []);
+      const data = await getAdminRestaurants({ page, limit: PAGE_SIZE });
+      setRows(Array.isArray(data?.restaurants) ? (data.restaurants as RestaurantRowData[]) : []);
+      setTotalCount(typeof data?.total === 'number' ? data.total : 0);
+      setCurrentPage(typeof data?.page === 'number' ? data.page : page);
     } catch (err: unknown) {
       const e = err as { response?: { data?: { error?: string } }; message?: string };
       showToast(e?.response?.data?.error || e?.message || 'Failed to load', 'error');
@@ -82,7 +94,15 @@ export default function AdminRestaurantsPage() {
     }
   };
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(1); }, []);
+
+  const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
+  const goToPage = (p: number) => {
+    const next = Math.min(Math.max(1, p), totalPages);
+    if (next === currentPage || loading) return;
+    setPending(null);
+    load(next);
+  };
 
   const filtered = useMemo<RestaurantRowData[]>(() => {
     if (!search.trim()) return rows;
@@ -156,7 +176,7 @@ export default function AdminRestaurantsPage() {
               placeholder="Search by name, owner, ID…"
               className="py-1 px-2 border border-rim rounded-md text-sm w-[240px]"
             />
-            <button type="button" className="btn-g btn-sm" onClick={load} disabled={loading}>
+            <button type="button" className="btn-g btn-sm" onClick={() => load()} disabled={loading}>
               {loading ? '…' : '↻ Refresh'}
             </button>
           </div>
@@ -203,6 +223,29 @@ export default function AdminRestaurantsPage() {
               </table>
             </div>
           )}
+          {totalPages > 1 ? (
+            <div className="flex items-center justify-center gap-2 mt-3">
+              <button
+                type="button"
+                className="btn-g btn-sm"
+                onClick={() => goToPage(currentPage - 1)}
+                disabled={loading || currentPage <= 1}
+              >
+                ← Prev
+              </button>
+              <span className="text-xs text-dim">
+                Page {currentPage} of {totalPages}
+              </span>
+              <button
+                type="button"
+                className="btn-g btn-sm"
+                onClick={() => goToPage(currentPage + 1)}
+                disabled={loading || currentPage >= totalPages}
+              >
+                Next →
+              </button>
+            </div>
+          ) : null}
         </div>
       </div>
     </div>

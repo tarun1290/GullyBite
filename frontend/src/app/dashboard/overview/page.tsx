@@ -38,6 +38,10 @@ export default function OverviewPage() {
   const [recent, setRecent] = useState<Order[]>([]);
   const [branches, setBranches] = useState<Branch[]>([]);
   const [menuTotal, setMenuTotal] = useState<number>(0);
+  // Optimistic offset added to today's counters between a new_paid_order
+  // and the resync that follows it. Reset to zero once the refetched
+  // analytics already include the order (see resyncStats).
+  const [optimistic, setOptimistic] = useState<{ revenue: number; orders: number }>({ revenue: 0, orders: 0 });
 
   const loadAll = useCallback(async () => {
     setLoading(true);
@@ -72,7 +76,7 @@ export default function OverviewPage() {
   // loadAll() on every socket event needlessly re-fetched the menu
   // endpoint. Generic 'order_status_changed' transitions are
   // intentionally ignored here.
-  const { lastOrder, lastPaid } = useSocketContext();
+  const { lastOrder, lastPaid, lastDelta, statsVersion } = useSocketContext();
   const refreshOrders = useCallback(async () => {
     const [orders, summary7] = await Promise.all([
       getRestaurantOrders({ limit: 5 }).catch(() => []),
@@ -83,6 +87,35 @@ export default function OverviewPage() {
   }, []);
   useEffect(() => { if (lastOrder) void refreshOrders(); }, [lastOrder, refreshOrders]);
   useEffect(() => { if (lastPaid) void refreshOrders(); }, [lastPaid, refreshOrders]);
+
+  // Live counter convergence. statsVersion bumps on every
+  // new_paid_order / order_status_changed → full resync, which then
+  // clears the optimistic offset (the refetched analytics already
+  // include the order, so keeping the offset would double-count). The
+  // lastDelta effect applies the instant bump while that refetch is in
+  // flight. A 5-min interval backstops any missed socket event.
+  // Initial load (loadAll) and the lastOrder/lastPaid effects above are
+  // intentionally left unchanged.
+  const resyncStats = useCallback(async () => {
+    await refreshOrders();
+    setOptimistic({ revenue: 0, orders: 0 });
+  }, [refreshOrders]);
+  useEffect(() => {
+    if (lastDelta) {
+      setOptimistic((p) => ({
+        revenue: p.revenue + lastDelta.revenue,
+        orders: p.orders + lastDelta.orderCount,
+      }));
+    }
+  }, [lastDelta]);
+  useEffect(() => {
+    if (statsVersion === 0) return;
+    void resyncStats();
+  }, [statsVersion, resyncStats]);
+  useEffect(() => {
+    const id = setInterval(() => { void resyncStats(); }, 5 * 60 * 1000);
+    return () => clearInterval(id);
+  }, [resyncStats]);
 
   const waConnected = isWaConnected(restaurant);
   const profileDone = Boolean(restaurant?.brand_name && restaurant?.phone);
@@ -137,8 +170,8 @@ export default function OverviewPage() {
   // the "All statuses" / "Delivered only" StatCard labels below.
   const daily = (d7?.daily as Array<{ date: string; orders: number; revenue: number }> | undefined) ?? [];
   const todayBucket = daily.length > 0 ? daily[daily.length - 1] : null;
-  const todayOrders = todayBucket?.orders ?? 0;
-  const todayRevenue = `₹${Math.round(todayBucket?.revenue ?? 0)}`;
+  const todayOrders = (todayBucket?.orders ?? 0) + optimistic.orders;
+  const todayRevenue = `₹${Math.round((todayBucket?.revenue ?? 0) + optimistic.revenue)}`;
   const weekOrders = d7?.summary?.total_orders ?? 0;
 
   return (

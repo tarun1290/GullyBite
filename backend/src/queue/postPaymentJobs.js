@@ -208,6 +208,7 @@ async function _handleCustomerNotification(payload) {
         customerName: order.customer_name || '',
         customerPhone: order.wa_phone || '',
         totalRs: order.total_rs,
+        delta: { revenue: order.total_rs, orderCount: 1 },
         itemCount: order.item_count || (order.items?.length || 0),
         items: (order.items || []).slice(0, 6).map(i => ({ name: i.name, quantity: i.quantity })),
         orderType: order.order_type || 'delivery',

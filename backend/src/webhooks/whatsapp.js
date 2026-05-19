@@ -4081,15 +4081,13 @@ const handleDeliveryFlowResponse = async (responseData, customer, conv, waAccoun
       }
     }
 
-    await wa.sendText(pid, token, to, `📍 Delivering to: *${addr.full_address}*\n\n🔍 Finding the nearest outlet...`);
-
     // Find branch and send menu
     if (addr.latitude && addr.longitude) {
       const radiusKm = await location.getPlatformDeliveryRadius();
       const result = await location.findBestAvailableBranch(addr.latitude, addr.longitude, restaurantId, radiusKm);
       if (result.found) {
         if (result.isFallback && result.fallbackMessage) await wa.sendText(pid, token, to, result.fallbackMessage);
-        await _sendBranchMenu(pid, token, to, result.branch, conv, customer, addr);
+        await _sendBranchMenu(pid, token, to, result.branch, conv, customer, addr, true);
       } else {
         await wa.sendText(pid, token, to, result.message);
       }
@@ -4099,7 +4097,7 @@ const handleDeliveryFlowResponse = async (responseData, customer, conv, waAccoun
       if (branch) {
         const restaurant = await col('restaurants').findOne({ _id: restaurantId });
         const fakeResult = { id: String(branch._id), name: branch.name, address: branch.address, restaurantId, catalogId: restaurant?.meta_catalog_id || branch.catalog_id, businessName: restaurant?.business_name };
-        await _sendBranchMenu(pid, token, to, fakeResult, conv, customer, addr);
+        await _sendBranchMenu(pid, token, to, fakeResult, conv, customer, addr, true);
       } else {
         await wa.sendText(pid, token, to, '😔 No outlets are currently open. Please try again later.');
       }
@@ -4226,10 +4224,6 @@ const handleDeliveryFlowResponse = async (responseData, customer, conv, waAccoun
     );
 
     // ── Confirmation + branch lookup ──
-    const receiverNote = (recipientName && recipientName !== customer.name)
-      ? `\n👤 Receiver: ${recipientName}` : '';
-    await wa.sendText(pid, token, to, `📍 Delivering to: *${fullAddr}*${receiverNote}\n\n🔍 Finding the nearest outlet...`);
-
     const parsedAddress = {
       lat: geo.lat,
       lng: geo.lng,
@@ -4245,7 +4239,7 @@ const handleDeliveryFlowResponse = async (responseData, customer, conv, waAccoun
       const result = await location.findBestAvailableBranch(geo.lat, geo.lng, restaurantId, radiusKm);
       if (result.found) {
         if (result.isFallback && result.fallbackMessage) await wa.sendText(pid, token, to, result.fallbackMessage);
-        await _sendBranchMenu(pid, token, to, result.branch, conv, customer, parsedAddress);
+        await _sendBranchMenu(pid, token, to, result.branch, conv, customer, parsedAddress, true, recipientName);
       } else {
         await wa.sendText(pid, token, to, result.message);
       }
@@ -4256,7 +4250,7 @@ const handleDeliveryFlowResponse = async (responseData, customer, conv, waAccoun
       if (branch) {
         const restaurant = await col('restaurants').findOne({ _id: restaurantId });
         const fakeResult = { id: String(branch._id), name: branch.name, address: branch.address, restaurantId, catalogId: restaurant?.meta_catalog_id || branch.catalog_id, businessName: restaurant?.business_name };
-        await _sendBranchMenu(pid, token, to, fakeResult, conv, customer, parsedAddress);
+        await _sendBranchMenu(pid, token, to, fakeResult, conv, customer, parsedAddress, true, recipientName);
       } else {
         await wa.sendText(pid, token, to, '😔 No outlets are currently open. Please try again later.');
       }
@@ -4276,7 +4270,7 @@ const handleDeliveryFlowResponse = async (responseData, customer, conv, waAccoun
 };
 
 // Helper: after address is resolved and branch found, set session and send MPM catalog
-async function _sendBranchMenu(pid, token, to, branch, conv, customer, address) {
+async function _sendBranchMenu(pid, token, to, branch, conv, customer, address, showDeliveryAddress = false, receiverName = null) {
   const restaurantId = branch.restaurantId || branch.restaurant_id;
 
   // Resolve catalogId — branch first, then restaurant fallback, then
@@ -4296,8 +4290,19 @@ async function _sendBranchMenu(pid, token, to, branch, conv, customer, address) 
   const branchLabel = branch.businessName ? `*${branch.businessName} — ${branch.name}*` : `*${branch.name}*`;
   const distLine = branch.distanceKm ? `\n🚴 ${branch.distanceKm} km from you` : '';
   const closedNote = (branch.is_open === false) ? `\n\n⏰ ${branch.name} is currently closed. You can browse the menu and order for when they open.` : '';
+  // nfm_reply flow folds the customer's delivery address into this message
+  // (the interim outlet-lookup message was removed). Other callers
+  // (saved-address quick path) keep the original "Delivering from:" header.
+  const customerAddr = address?.full_address || address?.address || '';
+  let header;
+  if (showDeliveryAddress && customerAddr) {
+    const receiverLine = receiverName ? `\n👤 Receiver: *${receiverName}*` : '';
+    header = `✅ Delivering to: *${customerAddr}*${receiverLine}\n\n`;
+  } else {
+    header = '✅ Delivering from:\n\n';
+  }
   await wa.sendText(pid, token, to,
-    `✅ Delivering from:\n\n🏪 ${branchLabel}${branch.address ? '\n📍 ' + branch.address : ''}${distLine}\n\nOpening our menu...${closedNote}`
+    `${header}🏪 ${branchLabel}${branch.address ? '\n📍 ' + branch.address : ''}${distLine}\n\nOpening our menu...${closedNote}`
   );
 
   await orderSvc.setState(conv.id, 'SHOWING_CATALOG', {

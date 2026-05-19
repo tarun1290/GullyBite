@@ -9,6 +9,7 @@ const router  = express.Router();
 const { col, newId } = require('../config/database');
 const { logActivity } = require('../services/activityLog');
 const metaConfig = require('../config/meta');
+const legalConfig = require('../config/legal');
 // memcache is the in-memory cache used by webhooks/whatsapp.js → cachedLookup.getWaAccount.
 // Required so _saveWabaAccounts can invalidate stale entries when a restaurant
 // changes their connected WABA — without this, webhook routing for the OLD
@@ -304,6 +305,34 @@ router.post('/signup', express.json(), signupLimiter, async (req, res, next) => 
     if (!/[^A-Za-z0-9]/.test(password))
       return res.status(400).json({ error: 'Password must contain at least one special character (e.g. @, #, !)' });
 
+    // ── Legal acceptance (Terms of Service + Privacy Policy) ──
+    // Consent is captured at account creation (this first signup step),
+    // never on the later /onboarding form. The client submits the
+    // document versions it displayed; we reject anything that doesn't
+    // match the currently-published versions so a stale browser tab
+    // can't record consent against an outdated document.
+    const { terms_version, privacy_version, accepted_at } = req.body;
+    if (typeof terms_version !== 'string' || !terms_version.trim() ||
+        typeof privacy_version !== 'string' || !privacy_version.trim())
+      return res.status(400).json({ error: 'You must accept the Terms of Service and Privacy Policy to continue' });
+    if (terms_version !== legalConfig.TERMS_VERSION ||
+        privacy_version !== legalConfig.PRIVACY_VERSION)
+      return res.status(400).json({ error: 'The Terms of Service or Privacy Policy have been updated. Please reload the page and accept the latest version.' });
+
+    // Client may omit accepted_at — fall back to server time. IP is
+    // resolved server-side only (never trusted from the client).
+    const acceptedAt = (typeof accepted_at === 'string' && accepted_at.trim())
+      ? accepted_at.trim()
+      : new Date().toISOString();
+    const ipAddress = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.ip;
+    const consent = {
+      terms_version,
+      privacy_version,
+      accepted_at: acceptedAt,
+      ip_address: ipAddress,
+      user_agent: req.headers['user-agent'],
+    };
+
     const existing = await col('restaurants').findOne({ email: email.toLowerCase() });
     if (existing) {
       if (existing.google_id && !existing.password_hash)
@@ -325,6 +354,7 @@ router.post('/signup', express.json(), signupLimiter, async (req, res, next) => 
       order_abbr: generateOrderAbbr(ownerName),
       campaigns_enabled: false,
       marketing_wa_status: 'not_configured',
+      consent,
       created_at: new Date(), updated_at: new Date(),
     });
     await seedAutoJourneyConfig(id);
@@ -470,6 +500,31 @@ router.post('/google', express.json(), googleOauthLimiter, async (req, res) => {
       approvalStatus  = restaurant.approval_status || 'pending';
       needsOnboarding = (restaurant.onboarding_step || 1) < 2;
     } else {
+      // NEW restaurant via Google → enforce Terms/Privacy acceptance at
+      // creation time, identical to the email signup handler. Returning
+      // Google users (the `if (restaurant)` branch above) are LOGGING IN
+      // and are NOT subject to this — if their stored consent is stale,
+      // the dashboard re-acceptance modal handles it.
+      const { terms_version, privacy_version, accepted_at } = req.body;
+      if (typeof terms_version !== 'string' || !terms_version.trim() ||
+          typeof privacy_version !== 'string' || !privacy_version.trim())
+        return res.status(400).json({ error: 'You must accept the Terms of Service and Privacy Policy to continue' });
+      if (terms_version !== legalConfig.TERMS_VERSION ||
+          privacy_version !== legalConfig.PRIVACY_VERSION)
+        return res.status(400).json({ error: 'The Terms of Service or Privacy Policy have been updated. Please reload the page and accept the latest version.' });
+
+      const acceptedAt = (typeof accepted_at === 'string' && accepted_at.trim())
+        ? accepted_at.trim()
+        : new Date().toISOString();
+      const ipAddress = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.ip;
+      const consent = {
+        terms_version,
+        privacy_version,
+        accepted_at: acceptedAt,
+        ip_address: ipAddress,
+        user_agent: req.headers['user-agent'],
+      };
+
       restaurantId = newId();
       await col('restaurants').insertOne({
         _id: restaurantId, google_id: googleId,
@@ -479,6 +534,7 @@ router.post('/google', express.json(), googleOauthLimiter, async (req, res) => {
         order_abbr: generateOrderAbbr(name || 'Owner'),
         approval_status: 'pending', onboarding_step: 1,
         campaigns_enabled: false,
+        consent,
         created_at: new Date(), updated_at: new Date(),
       });
       await seedAutoJourneyConfig(restaurantId);
@@ -632,30 +688,15 @@ router.get('/google/callback', async (req, res) => {
       await col('restaurants').updateOne({ _id: restaurant._id }, { $set });
       restaurantId = String(restaurant._id);
     } else {
-      restaurantId = newId();
-      await col('restaurants').insertOne({
-        _id: restaurantId, google_id: googleId,
-        owner_name: name || 'Owner', email: email?.toLowerCase(),
-        profile_picture: picture || null, auth_provider: 'google',
-        business_name: 'My Restaurant', status: 'active',
-        order_abbr: generateOrderAbbr(name || 'Owner'),
-        approval_status: 'pending', onboarding_step: 1,
-        campaigns_enabled: false,
-        created_at: new Date(), updated_at: new Date(),
-      });
-      // Seed defaults for new restaurants only — same order as /auth/google
-      // (autoJourney → loyalty → platformFlow). The two new seeds are
-      // fire-and-forget with an explicit .catch so a transient seed
-      // failure can't break the OAuth redirect; the seeds are also
-      // internally try/caught (log-and-swallow), so this is
-      // defense-in-depth. seedPlatformFlowAssignment stays awaited
-      // because the platform Flow is needed by the very first message
-      // the customer might send post-signup.
-      seedAutoJourneyConfig(restaurantId).catch((err) =>
-        console.error('seedAutoJourneyConfig failed for', restaurantId, err));
-      seedLoyaltyConfig(restaurantId).catch((err) =>
-        console.error('seedLoyaltyConfig failed for', restaurantId, err));
-      await seedPlatformFlowAssignment(restaurantId);
+      // NEW restaurant via the redirect callback: we CANNOT capture
+      // Terms/Privacy consent here — Google controls this GET request and
+      // the popup signup flow (POST /auth/google) is the only path that
+      // collects the acceptance checkbox. Rather than silently create a
+      // consent-less account, refuse and bounce the user back to signup.
+      // Returning Google users (the `if (restaurant)` branch above) are
+      // unaffected and can still log in via this callback.
+      req.log.warn({ googleId, email }, 'Google redirect-callback signup blocked — consent cannot be captured on the redirect path');
+      return res.redirect(frontendUrl('/', { error: 'google_signup_requires_consent' }));
     }
 
     // 4. Issue JWT

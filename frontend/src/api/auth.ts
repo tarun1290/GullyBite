@@ -20,6 +20,12 @@ export interface EmailSignupBody {
   ownerName: string;
   email: string;
   password: string;
+  // Legal consent captured client-side at the moment of submission.
+  // IP address is intentionally NOT collected here — the backend
+  // resolves it from x-forwarded-for / req.ip.
+  terms_version: string;
+  privacy_version: string;
+  accepted_at: string;
 }
 
 export async function emailSignup(body: EmailSignupBody): Promise<AuthResponse> {
@@ -27,8 +33,24 @@ export async function emailSignup(body: EmailSignupBody): Promise<AuthResponse> 
   return data;
 }
 
-export async function googleAuth(code: string): Promise<AuthResponse> {
-  const { data } = await client.post<AuthResponse>('/auth/google', { code });
+// Consent metadata sent ONLY on a Google SIGNUP (new account). For a
+// returning Google user logging in, `consent` is omitted — the backend
+// requires these fields only on its restaurant-creation branch. IP is
+// resolved server-side; never collected here.
+export interface GoogleAuthConsent {
+  terms_version: string;
+  privacy_version: string;
+  accepted_at: string;
+}
+
+export async function googleAuth(
+  code: string,
+  consent?: GoogleAuthConsent,
+): Promise<AuthResponse> {
+  const { data } = await client.post<AuthResponse>(
+    '/auth/google',
+    consent ? { code, ...consent } : { code },
+  );
   return data;
 }
 

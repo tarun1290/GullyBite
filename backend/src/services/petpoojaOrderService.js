@@ -359,6 +359,14 @@ async function cancelOrderOnPos(orderId, reason) {
       upstreamStatus: err?.response?.status,
       upstreamBody: err?.response?.data,
     }, 'cancelOrderOnPos: petpooja cancel failed (swallowed)');
+    // Best-effort: flag the order so ops can sweep + retry the POS
+    // cancel. This secondary write must never throw out of the swallow.
+    try {
+      await col('orders').updateOne(
+        { _id: orderId },
+        { $set: { petpooja_pos_cancel_failed: true } },
+      );
+    } catch (_) { /* swallow — flagging is best-effort */ }
   }
 }
 

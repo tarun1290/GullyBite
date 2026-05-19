@@ -54,6 +54,13 @@ export interface OrderUpdatePayload {
 // Both fan out via ws.broadcastOrder. Consumers today only read
 // truthiness to trigger a refetch, but the type is now accurate so
 // future readers don't pull undefined off the payload.
+// Live-stats delta carried on new_paid_order so dashboards can bump
+// their headline counters without an API round-trip.
+export interface StatsDelta {
+  revenue: number;
+  orderCount: number;
+}
+
 export interface OrderPaidPayload {
   orderId: string;
   orderNumber: string;
@@ -64,6 +71,7 @@ export interface OrderPaidPayload {
   items: { name: string; quantity: number }[];
   orderType: 'pickup' | 'delivery';
   notifiedAt: string;
+  delta?: StatsDelta;
 }
 
 export interface AdminActionPayload {
@@ -176,6 +184,13 @@ interface UseOrderNotificationsOptions {
 interface UseOrderNotificationsReturn {
   connected: boolean;
   lastOrder: OrderNotification | null;
+  // Most-recent stats delta from new_paid_order (ref changes per event
+  // so consumers can useEffect on it). null until the first paid order
+  // that carries a delta.
+  lastDelta: StatsDelta | null;
+  // Monotonic counter incremented on every new_paid_order AND
+  // order_status_changed — consumers useEffect on it to resync stats.
+  statsVersion: number;
 }
 
 const CHIME_SRC = '/sounds/new_order.mp3';
@@ -218,6 +233,12 @@ export function useOrderNotifications(
 
   const { socket, connected } = useSocket();
   const [lastOrder, setLastOrder] = useState<OrderNotification | null>(null);
+  // State (not a ref): consumers depend on these via useEffect, so the
+  // increment/assignment must trigger a re-render to propagate through
+  // SocketProvider's context — a ref's .current mutation would never
+  // reach them.
+  const [lastDelta, setLastDelta] = useState<StatsDelta | null>(null);
+  const [statsVersion, setStatsVersion] = useState<number>(0);
 
   const handleNew = useCallback(
     (data: OrderNotification) => {
@@ -230,6 +251,7 @@ export function useOrderNotifications(
 
   const handleUpdated = useCallback(
     (data: OrderUpdatePayload) => {
+      setStatsVersion((v) => v + 1);
       if (onUpdated) onUpdated(data);
     },
     [onUpdated],
@@ -237,6 +259,8 @@ export function useOrderNotifications(
 
   const handlePaid = useCallback(
     (data: OrderPaidPayload) => {
+      if (data.delta) setLastDelta(data.delta);
+      setStatsVersion((v) => v + 1);
       if (onPaid) onPaid(data);
     },
     [onPaid],
@@ -329,5 +353,5 @@ export function useOrderNotifications(
     handleDeliveryUpdate,
   ]);
 
-  return { connected, lastOrder };
+  return { connected, lastOrder, lastDelta, statsVersion };
 }

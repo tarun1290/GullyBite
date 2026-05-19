@@ -714,17 +714,15 @@ router.get('/stats', async (req, res) => {
       col('orders').countDocuments({ status: { $in: ['PENDING_PAYMENT', 'PAYMENT_FAILED'] } }),
       col('orders').countDocuments({ status: 'CANCELLED' }),
       col('orders').countDocuments({ status: { $in: CONFIRMED_ORDER_STATES }, created_at: { $gt: yesterday } }),
-      col('orders').find({ status: { $in: CONFIRMED_ORDER_STATES } }).project({ total_rs: 1 }).toArray(),
-      col('orders').find({ status: { $in: CONFIRMED_ORDER_STATES }, created_at: { $gt: yesterday } }).project({ total_rs: 1 }).toArray(),
-      col('orders').find({ status: { $in: CONFIRMED_ORDER_STATES }, created_at: { $gt: lastWeek } }).project({ total_rs: 1 }).toArray(),
+      col('orders').aggregate([{ $match: { status: { $in: CONFIRMED_ORDER_STATES } } }, { $group: { _id: null, sum: { $sum: '$total_rs' } } }]).toArray(),
+      col('orders').aggregate([{ $match: { status: { $in: CONFIRMED_ORDER_STATES }, created_at: { $gt: yesterday } } }, { $group: { _id: null, sum: { $sum: '$total_rs' } } }]).toArray(),
+      col('orders').aggregate([{ $match: { status: { $in: CONFIRMED_ORDER_STATES }, created_at: { $gt: lastWeek } } }, { $group: { _id: null, sum: { $sum: '$total_rs' } } }]).toArray(),
       col('customers').countDocuments({}),
       col('customers').countDocuments({ created_at: { $gt: yesterday } }),
       col('webhook_logs').countDocuments({}),
       col('webhook_logs').countDocuments({ processed: false }),
       col('webhook_logs').countDocuments({ error_message: { $ne: null } }),
     ]);
-
-    const sumRs = (arr) => arr.reduce((s, o) => s + (parseFloat(o.total_rs) || 0), 0);
 
     // Fetch missed-sale count separately (non-blocking)
     const [expiredCount, paymentFailedCount] = await Promise.all([
@@ -735,7 +733,7 @@ router.get('/stats', async (req, res) => {
     res.json({
       restaurants: { total: totalRestaurants, active: activeRestaurants },
       orders     : { total: totalOrders, delivered: deliveredOrders, pending: pendingOrders, cancelled: cancelledOrders, today: todayOrders },
-      revenue    : { total_rs: sumRs(allNonCancelledOrders), today_rs: sumRs(todayOrders2), week_rs: sumRs(weekOrders) },
+      revenue    : { total_rs: allNonCancelledOrders[0]?.sum || 0, today_rs: todayOrders2[0]?.sum || 0, week_rs: weekOrders[0]?.sum || 0 },
       customers  : { total: totalCustomers, today: todayCustomers },
       missed_sales: { expired: expiredCount, payment_failed: paymentFailedCount, total: expiredCount + paymentFailedCount },
       logs       : { total: totalLogs, unprocessed: unprocessedLogs, errors: errorLogs },
@@ -749,30 +747,88 @@ router.get('/stats', async (req, res) => {
 // ─── GET /api/admin/restaurants ──────────────────────────────
 router.get('/restaurants', async (req, res) => {
   try {
-    const restaurants = await col('restaurants').find({}).sort({ created_at: -1 }).toArray();
+    const page  = Math.max(1, parseInt(req.query.page) || 1);
+    const limit = Math.max(1, parseInt(req.query.limit) || 20);
+    const skip  = (page - 1) * limit;
 
-    const enriched = await Promise.all(restaurants.map(async r => {
+    const [restaurants, total] = await Promise.all([
+      col('restaurants').find({}).sort({ created_at: -1 }).skip(skip).limit(limit).toArray(),
+      col('restaurants').countDocuments({}),
+    ]);
+
+    const restaurantIds = restaurants.map(r => String(r._id));
+
+    // One branches query for the whole page → restaurant→branchIds map.
+    const branchDocs = await col('branches')
+      .find({ restaurant_id: { $in: restaurantIds } })
+      .project({ _id: 1, restaurant_id: 1 })
+      .toArray();
+    const branchesByRestaurant = {};
+    const allBranchIds = [];
+    for (const b of branchDocs) {
+      const rid = String(b.restaurant_id);
+      const bid = String(b._id);
+      (branchesByRestaurant[rid] ||= []).push(bid);
+      allBranchIds.push(bid);
+    }
+
+    // One orders aggregation (status breakdown + non-cancelled
+    // revenue) grouped by branch_id, one menu_items count grouped by
+    // branch_id, one payments failed/refunded count grouped by
+    // restaurant_id — all batched, no per-restaurant loop.
+    const [orderAgg, menuAgg, payAgg] = await Promise.all([
+      col('orders').aggregate([
+        { $match: { branch_id: { $in: allBranchIds } } },
+        { $group: {
+            _id: '$branch_id',
+            total:            { $sum: 1 },
+            delivered:        { $sum: { $cond: [{ $eq: ['$status', 'DELIVERED'] }, 1, 0] } },
+            pending:          { $sum: { $cond: [{ $eq: ['$status', 'PENDING_PAYMENT'] }, 1, 0] } },
+            confirmed:        { $sum: { $cond: [{ $eq: ['$status', 'CONFIRMED'] }, 1, 0] } },
+            preparing:        { $sum: { $cond: [{ $eq: ['$status', 'PREPARING'] }, 1, 0] } },
+            out_for_delivery: { $sum: { $cond: [{ $eq: ['$status', 'DISPATCHED'] }, 1, 0] } },
+            cancelled:        { $sum: { $cond: [{ $eq: ['$status', 'CANCELLED'] }, 1, 0] } },
+            revenue:          { $sum: { $cond: [{ $ne: ['$status', 'CANCELLED'] }, '$total_rs', 0] } },
+        } },
+      ]).toArray(),
+      col('menu_items').aggregate([
+        { $match: { branch_id: { $in: allBranchIds } } },
+        { $group: { _id: '$branch_id', count: { $sum: 1 } } },
+      ]).toArray(),
+      col('payments').aggregate([
+        { $match: { restaurant_id: { $in: restaurantIds }, status: { $in: ['failed', 'refunded'] } } },
+        { $group: { _id: '$restaurant_id', count: { $sum: 1 } } },
+      ]).toArray(),
+    ]);
+
+    const orderByBranch = new Map(orderAgg.map(o => [String(o._id), o]));
+    const menuByBranch  = new Map(menuAgg.map(m => [String(m._id), m.count]));
+    const payByRest     = new Map(payAgg.map(p => [String(p._id), p.count]));
+
+    const enriched = restaurants.map(r => {
       const rid = String(r._id);
-      const branches = await col('branches').find({ restaurant_id: rid }).project({ _id: 1 }).toArray();
-      const branchIds = branches.map(b => String(b._id));
-
-      // Orders with full status breakdown
-      const orders = await col('orders').find({ branch_id: { $in: branchIds } })
-        .project({ total_rs: 1, status: 1, delivered_at: 1 }).toArray();
+      const bids = branchesByRestaurant[rid] || [];
 
       const ordersByStatus = {
-        total: orders.length,
-        delivered: orders.filter(o => o.status === 'DELIVERED').length,
-        pending: orders.filter(o => o.status === 'PENDING_PAYMENT').length,
-        confirmed: orders.filter(o => o.status === 'CONFIRMED').length,
-        preparing: orders.filter(o => o.status === 'PREPARING').length,
-        out_for_delivery: orders.filter(o => o.status === 'DISPATCHED').length,
-        cancelled: orders.filter(o => o.status === 'CANCELLED').length,
+        total: 0, delivered: 0, pending: 0, confirmed: 0,
+        preparing: 0, out_for_delivery: 0, cancelled: 0,
       };
-
-      const revenue_rs = orders
-        .filter(o => o.status !== 'CANCELLED')
-        .reduce((s, o) => s + (parseFloat(o.total_rs) || 0), 0);
+      let revenue_rs = 0;
+      let catalogCount = 0;
+      for (const bid of bids) {
+        const oa = orderByBranch.get(bid);
+        if (oa) {
+          ordersByStatus.total            += oa.total || 0;
+          ordersByStatus.delivered        += oa.delivered || 0;
+          ordersByStatus.pending          += oa.pending || 0;
+          ordersByStatus.confirmed        += oa.confirmed || 0;
+          ordersByStatus.preparing        += oa.preparing || 0;
+          ordersByStatus.out_for_delivery += oa.out_for_delivery || 0;
+          ordersByStatus.cancelled        += oa.cancelled || 0;
+          revenue_rs                      += oa.revenue || 0;
+        }
+        catalogCount += menuByBranch.get(bid) || 0;
+      }
 
       // Fulfillment rate = delivered / (total - cancelled) * 100
       const nonCancelled = ordersByStatus.total - ordersByStatus.cancelled;
@@ -780,31 +836,25 @@ router.get('/restaurants', async (req, res) => {
         ? Math.round((ordersByStatus.delivered / nonCancelled) * 100)
         : 0;
 
-      // Catalog count (menu items across all branches)
-      const [catalogCount, issueCount] = await Promise.all([
-        col('menu_items').countDocuments({ branch_id: { $in: branchIds } }),
-        // Issues = cancelled orders + failed payments
-        col('payments').countDocuments({ restaurant_id: rid, status: { $in: ['failed', 'refunded'] } }),
-      ]);
-
-      const issues = ordersByStatus.cancelled + issueCount;
+      // Issues = cancelled orders + failed/refunded payments
+      const issues = ordersByStatus.cancelled + (payByRest.get(rid) || 0);
 
       const out = mapId(r);
       delete out.password_hash;
       delete out.meta_access_token;
       return {
         ...out,
-        branch_count: branches.length,
+        branch_count: bids.length,
         catalog_count: catalogCount,
         orders: ordersByStatus,
-        order_count: orders.length,
+        order_count: ordersByStatus.total,
         fulfillment_pct,
         issues,
         revenue_rs,
       };
-    }));
+    });
 
-    res.json(enriched);
+    res.json({ restaurants: enriched, total, page, limit });
   } catch (err) {
     res.status(500).json({ success: false, message: "Internal server error" });
   }
@@ -814,17 +864,38 @@ router.get('/restaurants', async (req, res) => {
 router.get('/branches', async (req, res) => {
   try {
     const { restaurant_id } = req.query;
+    const page  = Math.max(1, parseInt(req.query.page) || 1);
+    const limit = Math.max(1, parseInt(req.query.limit) || 50);
+    const skip  = (page - 1) * limit;
     const filter = restaurant_id ? { restaurant_id } : {};
-    const branches = await col('branches').find(filter).sort({ created_at: -1 }).toArray();
+    const branches = await col('branches').find(filter).sort({ created_at: -1 }).skip(skip).limit(limit).toArray();
 
-    const enriched = await Promise.all(branches.map(async b => {
-      const bid = String(b._id);
-      const restaurant = await col('restaurants').findOne({ _id: b.restaurant_id }, { projection: { business_name: 1 } });
-      const [menuCount, orderCount] = await Promise.all([
-        col('menu_items').countDocuments({ branch_id: bid }),
-        col('orders').countDocuments({ branch_id: bid, status: { $in: CONFIRMED_ORDER_STATES } }),
-      ]);
-      return { ...mapId(b), business_name: restaurant?.business_name, menu_item_count: menuCount, order_count: orderCount };
+    const branchIds = branches.map(b => String(b._id));
+    const restaurantIds = [...new Set(branches.map(b => b.restaurant_id).filter(Boolean))];
+
+    // Batched: one restaurants lookup + one menu_items count agg + one
+    // orders count agg for the whole page (was per-branch N+1).
+    const [restaurantDocs, menuAgg, orderAgg] = await Promise.all([
+      col('restaurants').find({ _id: { $in: restaurantIds } }).project({ _id: 1, business_name: 1 }).toArray(),
+      col('menu_items').aggregate([
+        { $match: { branch_id: { $in: branchIds } } },
+        { $group: { _id: '$branch_id', count: { $sum: 1 } } },
+      ]).toArray(),
+      col('orders').aggregate([
+        { $match: { branch_id: { $in: branchIds }, status: { $in: CONFIRMED_ORDER_STATES } } },
+        { $group: { _id: '$branch_id', count: { $sum: 1 } } },
+      ]).toArray(),
+    ]);
+
+    const restById      = new Map(restaurantDocs.map(r => [String(r._id), r]));
+    const menuByBranch  = new Map(menuAgg.map(m => [String(m._id), m.count]));
+    const orderByBranch = new Map(orderAgg.map(o => [String(o._id), o.count]));
+
+    const enriched = branches.map(b => ({
+      ...mapId(b),
+      business_name: restById.get(String(b.restaurant_id))?.business_name,
+      menu_item_count: menuByBranch.get(String(b._id)) || 0,
+      order_count: orderByBranch.get(String(b._id)) || 0,
     }));
 
     res.json(enriched);
@@ -862,14 +933,30 @@ router.get('/orders', async (req, res) => {
       col('orders').countDocuments(filter),
     ]);
 
-    const enriched = await Promise.all(orders.map(async o => {
-      const [branch, customer] = await Promise.all([
-        col('branches').findOne({ _id: o.branch_id }, { projection: { name: 1, restaurant_id: 1 } }),
-        col('customers').findOne({ _id: o.customer_id }, { projection: { name: 1, wa_phone: 1, bsuid: 1 } }),
-      ]);
-      const restaurant = branch
-        ? await col('restaurants').findOne({ _id: branch.restaurant_id }, { projection: { business_name: 1 } })
-        : null;
+    // Batched joins: one branches + one customers (parallel), then one
+    // restaurants keyed off the branch results — joined in memory.
+    // Was 3 round-trips per order (≈3·limit).
+    const branchIds = [...new Set(orders.map(o => o.branch_id).filter(Boolean))];
+    const customerIds = [...new Set(orders.map(o => o.customer_id).filter(Boolean))];
+
+    const [branchDocs, customerDocs] = await Promise.all([
+      col('branches').find({ _id: { $in: branchIds } }).project({ _id: 1, name: 1, restaurant_id: 1 }).toArray(),
+      col('customers').find({ _id: { $in: customerIds } }).project({ _id: 1, name: 1, wa_phone: 1, bsuid: 1 }).toArray(),
+    ]);
+    const branchById = new Map(branchDocs.map(b => [String(b._id), b]));
+    const customerById = new Map(customerDocs.map(c => [String(c._id), c]));
+
+    const restaurantIds = [...new Set(branchDocs.map(b => b.restaurant_id).filter(Boolean))];
+    const restaurantDocs = await col('restaurants')
+      .find({ _id: { $in: restaurantIds } })
+      .project({ _id: 1, business_name: 1 })
+      .toArray();
+    const restaurantById = new Map(restaurantDocs.map(r => [String(r._id), r]));
+
+    const enriched = orders.map(o => {
+      const branch = branchById.get(String(o.branch_id));
+      const customer = customerById.get(String(o.customer_id));
+      const restaurant = branch ? restaurantById.get(String(branch.restaurant_id)) : null;
       return {
         ...mapId(o),
         business_name: restaurant?.business_name,
@@ -877,7 +964,7 @@ router.get('/orders', async (req, res) => {
         wa_phone:      customer?.wa_phone || customer?.bsuid || '',
         customer_name: customer?.name,
       };
-    }));
+    });
 
     res.json({ orders: enriched, total });
   } catch (err) {

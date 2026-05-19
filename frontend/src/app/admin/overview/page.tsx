@@ -5,6 +5,7 @@ import Link from 'next/link';
 import StatCard from '../../../components/StatCard';
 import SectionError from '../../../components/restaurant/analytics/SectionError';
 import { useToast } from '../../../components/Toast';
+import { useSocketContext } from '../../../components/shared/SocketProvider';
 import {
   getAdminStats,
   getAdminRatingStats,
@@ -130,6 +131,12 @@ export default function AdminOverviewPage() {
   const [loading, setLoading] = useState<boolean>(true);
   const [err, setErr] = useState<string | null>(null);
 
+  // Live-stats wiring (mirrors dashboard/overview). Optimistic offset is
+  // added to orders.today + revenue.total_rs only, then cleared by the
+  // resync once getAdminStats already reflects the order.
+  const { lastDelta, statsVersion } = useSocketContext();
+  const [optimistic, setOptimistic] = useState<{ revenue: number; orders: number }>({ revenue: 0, orders: 0 });
+
   // Owner Push Alerts — platform-level prefs. Toggles save immediately
   // (no Save button) so we track per-key in-flight state to disable the
   // affected row while the PATCH is round-tripping. On error we revert
@@ -163,6 +170,42 @@ export default function AdminOverviewPage() {
   }, []);
 
   useEffect(() => { load(); }, [load]);
+
+  // Live counter convergence. `load` (initial fetch, toggles the page
+  // loading state) is left untouched — this path refetches SILENTLY so
+  // counters don't flash "…" on every socket event. statsVersion bumps
+  // on every new_paid_order / order_status_changed → silent resync,
+  // which then clears the optimistic offset (the refetched stats
+  // already include the order). lastDelta applies the instant bump
+  // while that refetch is in flight. 5-min interval backstops misses.
+  const refreshStats = useCallback(async () => {
+    const [s, o] = await Promise.all([
+      (getAdminStats() as Promise<AdminStats | null>).catch(() => null),
+      (getAdminOrders({ limit: 8 }) as Promise<OrdersResponse | null>).catch(() => null),
+    ]);
+    if (s) setStats(s);
+    if (o) setOrders(o.orders || []);
+  }, []);
+  const resyncStats = useCallback(async () => {
+    await refreshStats();
+    setOptimistic({ revenue: 0, orders: 0 });
+  }, [refreshStats]);
+  useEffect(() => {
+    if (lastDelta) {
+      setOptimistic((p) => ({
+        revenue: p.revenue + lastDelta.revenue,
+        orders: p.orders + lastDelta.orderCount,
+      }));
+    }
+  }, [lastDelta]);
+  useEffect(() => {
+    if (statsVersion === 0) return;
+    void resyncStats();
+  }, [statsVersion, resyncStats]);
+  useEffect(() => {
+    const id = setInterval(() => { void resyncStats(); }, 5 * 60 * 1000);
+    return () => clearInterval(id);
+  }, [resyncStats]);
 
   // One-shot load for owner push prefs. Independent of the main `load`
   // so a stats failure doesn't block the toggles from rendering, and
@@ -216,6 +259,9 @@ export default function AdminOverviewPage() {
   const ordCancelled = s.orders?.cancelled;
   const revTotal = s.revenue?.total_rs;
   const revWeek = s.revenue?.week_rs;
+  // Optimistic offset applied to orders.today + revenue.total_rs only.
+  const ordTodayDisp = ordToday != null ? ordToday + optimistic.orders : ordToday;
+  const revTotalDisp = revTotal != null ? revTotal + optimistic.revenue : revTotal;
   const custTotal = s.customers?.total;
   const custToday = s.customers?.today;
   const logsTotal = s.logs?.total;
@@ -261,9 +307,9 @@ export default function AdminOverviewPage() {
             <StatCard label="Restaurants" value={loading ? '…' : fmtNum(restTotal)}
               delta={restActive != null ? `${fmtNum(restActive)} active` : null} />
             <StatCard label="Total Orders" value={loading ? '…' : fmtNum(ordTotal)}
-              delta={ordToday != null ? `${fmtNum(ordToday)} today` : null} />
+              delta={ordTodayDisp != null ? `${fmtNum(ordTodayDisp)} today` : null} />
             <StatCard label="Total Revenue"
-              value={loading ? '…' : (revTotal != null ? `₹${fmtNum(revTotal)}` : '—')}
+              value={loading ? '…' : (revTotalDisp != null ? `₹${fmtNum(revTotalDisp)}` : '—')}
               delta={revWeek != null ? `₹${fmtNum(revWeek)} this week` : null} />
             <StatCard label="Customers" value={loading ? '…' : fmtNum(custTotal)}
               delta={custToday != null ? `${fmtNum(custToday)} today` : null} />
