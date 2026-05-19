@@ -905,6 +905,18 @@ const _sendOrderCheckout = async (pid, token, to, { orderNumber, items, charges,
           proroutingEstimatePrice = Number(est?.estimated_price) || 0;
           proroutingQuoteId = est?.quote_id || null;
 
+          // GullyBite's flat per-order delivery markup (₹5 today, env
+          // DELIVERY_PLATFORM_MARKUP_FLAT_RS, default 0). Stage 1
+          // (services/delivery/index.js) folds this into the 3PL fee
+          // before the split; the Stage 2 re-quote here bypassed Stage 1
+          // entirely, so without re-adding it the customer was charged
+          // the bare Prorouting fare with no markup. Add it back onto the
+          // gross delivery fee BEFORE calculateCheckout so the
+          // customer/restaurant split + GST land on the same base Stage 1
+          // would have produced.
+          const platformMarkupRs = parseFloat(process.env.DELIVERY_PLATFORM_MARKUP_FLAT_RS || 0);
+          const grossDeliveryFeeRs = proroutingEstimatePrice + platformMarkupRs;
+
           // Re-run the financial split using the Prorouting fare so the
           // customer/restaurant shares are re-derived from the live quote.
           const { calculateCheckout } = require('../core/financialEngine');
@@ -918,7 +930,7 @@ const _sendOrderCheckout = async (pid, token, to, { orderNumber, items, charges,
           effectiveCharges = calculateCheckout(
             restaurantConfig,
             subtotalRs,
-            proroutingEstimatePrice,
+            grossDeliveryFeeRs,
             session.discountRs || 0
           );
           effectiveDeliveryFeeRs = effectiveCharges.customer_delivery_rs;
@@ -932,7 +944,12 @@ const _sendOrderCheckout = async (pid, token, to, { orderNumber, items, charges,
           if (session.deliveryFeeBreakdown && typeof session.deliveryFeeBreakdown === 'object') {
             session.deliveryFeeBreakdown = {
               ...session.deliveryFeeBreakdown,
-              totalFeeRs: proroutingEstimatePrice,
+              // Gross fee = Prorouting fare + flat markup — matches the
+              // base actually passed to calculateCheckout above, so the
+              // breakdown persisted on the order doc (platformMarkupRs
+              // included) is consistent with what the customer was charged.
+              totalFeeRs: grossDeliveryFeeRs,
+              platformMarkupRs,
               providerName: 'prorouting',
             };
           }

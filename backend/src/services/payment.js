@@ -94,32 +94,17 @@ const createRazorpayOrder = async (order, customer) => {
     }
   }
 
-  // 20-minute payment window — matches the order doc's expires_at set
-  // at order creation (services/order.js, services/orderCreate.service.js,
-  // webhooks/checkout.js). Razorpay rejects payment attempts past
-  // expire_by, so the customer's payment UI shows the failure before
-  // the transaction is initiated rather than capturing-then-refunding
-  // via the expiry gate in webhooks/razorpay.js. The local payments-row
-  // expires_at is derived from the same source so the two windows can
-  // never drift.
+  // 20-minute window for the LOCAL payments-row expires_at only.
+  // Razorpay's Orders API rejects the Payment-Links-only gateway
+  // expiry fields with a 400, so no gateway-side window is sent.
+  // Enforcement is application-side: the expiry gate above + the
+  // post-capture gates in webhooks/razorpay.js + webhooks/checkout.js.
   const EXPIRY_MS = 20 * 60 * 1000;
-  const expireByUnix = Math.floor((Date.now() + EXPIRY_MS) / 1000);
 
   const rzpOrder = await getRzp().orders.create({
     amount  : Math.round(order.total_rs * 100),
     currency: 'INR',
     receipt : order.order_number,
-    expire_by: expireByUnix,
-    // close_by — derived from order.expires_at when present so Razorpay
-    // closes the order at that instant and rejects payment attempts
-    // past it. Mirrors the pattern in createRazorpayOrderRaw + the
-    // webhooks/whatsapp.js call site. expires_at is set by
-    // services/order.js and webhooks/checkout.js at order creation;
-    // legacy orders predating the field fall through to the existing
-    // expire_by-only behavior.
-    ...(order?.expires_at
-      ? { close_by: Math.floor(new Date(order.expires_at).getTime() / 1000) }
-      : {}),
     notes: {
       order_id    : order.id,
       order_number: order.order_number,
@@ -208,24 +193,18 @@ const createRazorpayOrderRaw = async ({ amountRs, currency = 'INR', receipt, not
     }
   }
 
-  // 20-minute payment window — matches createRazorpayOrder above and the
-  // order doc's expires_at. Razorpay rejects late payment attempts at
-  // the gateway before they reach our webhook, so the customer's UI
-  // shows the failure inline.
-  const expireByUnix = Math.floor((Date.now() + 20 * 60 * 1000) / 1000);
+  // Razorpay's Orders API rejects the Payment-Links-only gateway
+  // expiry fields with a 400, so none are sent. The 20-minute window
+  // is enforced application-side via the expiry gate at the top of
+  // this function + the post-capture gates in webhooks/razorpay.js +
+  // webhooks/checkout.js. The gate's argument stays a function param;
+  // it is intentionally NOT forwarded to Razorpay.
   const rzpOrder = await getRzp().orders.create({
     amount: Math.round(Number(amountRs) * 100), // paise
     currency,
     // Razorpay caps receipt at 40 chars — clamp defensively in case
     // a caller hands us something longer.
     ...(receipt ? { receipt: String(receipt).slice(0, 40) } : {}),
-    expire_by: expireByUnix,
-    // Optional close_by — when supplied (Unix seconds), Razorpay closes
-    // the order at that instant and rejects further payment attempts at
-    // the gateway. Caller passes the order doc's expires_at so the
-    // payment sheet shows "expired" instead of capturing then needing
-    // a refund. Pass-through; no conversion here.
-    ...(close_by ? { close_by } : {}),
     notes: notes || {},
   });
   // Write-back so a duplicate _sendOrderCheckout for the same
