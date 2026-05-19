@@ -2914,7 +2914,11 @@ router.delete('/menu/:itemId', requireStaffPermission('manage_menu'), requireBra
     }
     invalidateCache(`restaurant:${req.restaurantId}:menu:all`);
 
-    catalog.deleteProduct(item, item.branch_id)
+    catalog.deleteProduct(item, item.branch_id || item.branch_ids?.[0])
+      .then(result => {
+        if (result?.skipped) logger.warn({ itemId: req.params.itemId },
+          'Menu delete: Meta catalog delete skipped');
+      })
       .catch(err => logger.error({ err, itemId: req.params.itemId }, 'Menu delete sync failed'));
     res.json({ success: true });
 

@@ -98,7 +98,28 @@ function backoffDelayMs(attempts) {
 // Optional `maxAttempts` overrides MAX_ATTEMPTS for one-off jobs that
 // should retry less aggressively than the default 5.
 async function enqueue(type, payload, { delayMs = 0, jobId = null, maxAttempts = MAX_ATTEMPTS } = {}) {
-  if (!JOB_TYPES[type]) throw new Error(`postPaymentJobs: unknown type ${type}`);
+  // Validate against the job-type *values*, not keys. Every caller
+  // passes JOB_TYPES.X (the value, e.g. 'petpooja_push'); _claim() and
+  // HANDLERS likewise key off Object.values(JOB_TYPES). The previous
+  // `JOB_TYPES[type]` was a KEY lookup, so any entry whose key !== value
+  // (the documented PETPOOJA_PUSH mismatch) was falsely rejected — its
+  // real, registered handler never ran and the throw rejected the
+  // caller's Promise.all, halting the whole post-payment fan-out
+  // (order_confirmed / customer notification never fired).
+  if (!Object.values(JOB_TYPES).includes(type)) {
+    // Genuinely unknown type (e.g. a future job wired into
+    // enqueueForOrder before its handler/registry entry lands). Warn
+    // and SKIP rather than throw: one missing type must never reject
+    // Promise.all and poison the critical order_confirmed chain. Return
+    // a resolved sentinel so the caller still settles cleanly. Real
+    // handler-execution failures are unaffected — those are surfaced as
+    // errors by _processOne, not here.
+    log.warn(
+      { type, jobId, orderId: payload?.orderId || null },
+      'enqueue: unknown job type — skipping this job; post-payment chain continues'
+    );
+    return { skipped: true, type };
+  }
   const now = new Date();
   const runAt = delayMs > 0 ? new Date(now.getTime() + delayMs) : now;
   const job = {

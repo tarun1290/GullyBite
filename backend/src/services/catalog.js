@@ -1180,11 +1180,19 @@ const updateProduct = async (menuItemId) => {
 // can be reconciled later (Meta keeps the stale product otherwise).
 const deleteProduct = async (menuItem, branchId) => {
   const branch = await col('branches').findOne({ _id: branchId });
-  if (!branch || !menuItem?.retailer_id) return { skipped: true };
+  if (!branch || !menuItem?.retailer_id) {
+    log.warn({ branchId, retailer_id: menuItem?.retailer_id },
+      'deleteProduct skipped: missing branch or retailer_id');
+    return { skipped: true };
+  }
 
   const restaurant = await col('restaurants').findOne({ _id: branch.restaurant_id });
   const catalogId = restaurant?.meta_catalog_id || branch.catalog_id;
-  if (!catalogId) return { skipped: true };
+  if (!catalogId) {
+    log.warn({ branchId, catalogId },
+      'deleteProduct skipped: no catalogId on branch or restaurant');
+    return { skipped: true };
+  }
 
   const { token } = await _getAccessToken(branch.restaurant_id);
   initSdk(token);
