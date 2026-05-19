@@ -1,8 +1,9 @@
 'use client';
 
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import Toggle from '../../Toggle';
 import { useToast } from '../../Toast';
+import { useRestaurant } from '../../../contexts/RestaurantContext';
 import {
   getMenuAll,
   getMenuUnassigned,
@@ -131,6 +132,10 @@ export default function MenuEditorSection({
   branches, branchesLoading, selectedBranchId, setSelectedBranchId, refetchBranches,
 }: MenuEditorSectionProps) {
   const { showToast } = useToast();
+  // Restaurant-level profile from the shared RestaurantProvider context
+  // (wrapped at DashboardLayoutClient). Already fetched once by the
+  // provider — reading it here adds no extra API call.
+  const { restaurant } = useRestaurant();
   const [items, setItems] = useState<LooseItem[]>([]);
   const [totalCount, setTotalCount] = useState<number>(0);
   const [unassignedCount, setUnassignedCount] = useState<number>(0);
@@ -155,7 +160,36 @@ export default function MenuEditorSection({
   const isUnassigned = selectedBranchId === '__unassigned__';
   const isSpecificBranch = !isAll && !isUnassigned && Boolean(selectedBranchId);
   const currentBranch = isSpecificBranch ? branches.find((b) => b.id === selectedBranchId) : null;
-  const hasCatalog = Boolean(currentBranch?.catalog_id);
+  // A catalog is valid if EITHER the branch has its own catalog OR the
+  // restaurant has a restaurant-level catalog (single-type restaurants
+  // run a single shared catalog at the restaurant level, so the
+  // branch-only check fired the "No catalog" warning incorrectly). The
+  // Branch type only carries `catalog_id`; the Restaurant type carries
+  // both `meta_catalog_id` and `catalog_id`.
+  const hasCatalog = Boolean(
+    currentBranch?.catalog_id
+    || restaurant?.meta_catalog_id
+    || restaurant?.catalog_id
+  );
+
+  // Auto-select the only branch for single-type restaurants. The parent
+  // defaults selectedBranchId to '__all__'; single-type tenants have one
+  // branch and expect to land on it directly. Fires once after branches
+  // load (guarded by a ref so a later manual switch back to "All
+  // Products" isn't snapped away).
+  const autoSelectedRef = useRef(false);
+  useEffect(() => {
+    if (autoSelectedRef.current) return;
+    if (branchesLoading) return;
+    const firstBranch = branches[0];
+    if (!firstBranch) return;
+    if (restaurant?.business_type !== 'single') return;
+    if (selectedBranchId === '__all__') {
+      autoSelectedRef.current = true;
+      setSelectedBranchId(firstBranch.id);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [branchesLoading, branches, restaurant]);
 
   const load = async () => {
     if (branchesLoading) return;

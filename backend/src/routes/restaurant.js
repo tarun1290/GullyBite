@@ -2529,6 +2529,7 @@ router.delete('/branches/:branchId/categories/:catId', async (req, res) => {
       { $set: { category_id: null } }
     );
     memcache.del(`branch:${req.params.branchId}:menu`);
+    memcache.del(`strategy:compressed:${req.params.branchId}`);
     invalidateCache(`restaurant:${req.restaurantId}:menu:all`);
     res.json({ ok: true });
   } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
@@ -2740,7 +2741,13 @@ router.post('/branches/:branchId/menu', requireStaffPermission('manage_menu'), r
       updated_at: now,
     };
     await col('menu_items').insertOne(item);
-    memcache.del(`branch:${req.body.branchId}:menu`);
+    // Branch id is the URL segment (req.params.branchId) — the request
+    // body carries no branch id, so keying the bust off the body landed
+    // on `branch:undefined:menu` and left the real MPM cache stale. Also
+    // bust the mpmStrategy compressed entry keyed on the same branch id
+    // (mpmStrategy/index.js:268).
+    memcache.del(`branch:${req.params.branchId}:menu`);
+    memcache.del(`strategy:compressed:${req.params.branchId}`);
     invalidateCache(`restaurant:${req.restaurantId}:menu:all`);
 
     await col('restaurants').updateOne(
@@ -2852,7 +2859,10 @@ router.put('/menu/:itemId', requireStaffPermission('manage_menu'), requireBranch
       { returnDocument: 'after' }
     );
     if (updated) {
-      if (updated.branch_id) memcache.del(`branch:${updated.branch_id}:menu`);
+      if (updated.branch_id) {
+        memcache.del(`branch:${updated.branch_id}:menu`);
+        memcache.del(`strategy:compressed:${updated.branch_id}`);
+      }
       queueSync(req.restaurantId, 'branch', [updated.branch_id]);
 
       // Mark compressed catalog as stale if commerce-identity fields changed
@@ -2898,7 +2908,10 @@ router.delete('/menu/:itemId', requireStaffPermission('manage_menu'), requireBra
     if (!item) return res.status(404).json({ error: 'Menu item not found' });
 
     await col('menu_items').deleteOne({ _id: item._id });
-    if (item.branch_id) memcache.del(`branch:${item.branch_id}:menu`);
+    if (item.branch_id) {
+      memcache.del(`branch:${item.branch_id}:menu`);
+      memcache.del(`strategy:compressed:${item.branch_id}`);
+    }
     invalidateCache(`restaurant:${req.restaurantId}:menu:all`);
 
     catalog.deleteProduct(item, item.branch_id)
@@ -3968,7 +3981,10 @@ router.post('/menu/:itemId/variants', async (req, res) => {
       { upsert: true, returnDocument: 'after' }
     );
 
-    if (srcItem.branch_id) memcache.del(`branch:${srcItem.branch_id}:menu`);
+    if (srcItem.branch_id) {
+      memcache.del(`branch:${srcItem.branch_id}:menu`);
+      memcache.del(`strategy:compressed:${srcItem.branch_id}`);
+    }
     queueSync(req.restaurantId, 'branch', [srcItem.branch_id]);
     invalidateCache(`restaurant:${req.restaurantId}:menu:all`);
 
@@ -4405,6 +4421,7 @@ router.post('/menu/variant', requireStaffPermission('manage_menu'), requireBranc
     );
 
     memcache.del(`branch:${branchId}:menu`);
+    memcache.del(`strategy:compressed:${branchId}`);
     queueSync(req.restaurantId, 'branch', [branchId]);
     invalidateCache(`restaurant:${req.restaurantId}:menu:all`);
 

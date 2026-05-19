@@ -41,6 +41,21 @@ interface ImageUploadResult {
   s3_key?: string;
 }
 
+// Last path segment of an S3 key or URL, stripped of any query/hash.
+// Used purely to derive a human-readable label for a pre-existing image
+// (edit mode) — the full S3 URL itself is NEVER rendered as text; it
+// lives in state only for form submission.
+function baseNameFromPath(p: string): string {
+  if (!p) return '';
+  const noQuery = p.split(/[?#]/)[0] || '';
+  const seg = noQuery.split('/').filter(Boolean).pop() || '';
+  try {
+    return decodeURIComponent(seg);
+  } catch {
+    return seg;
+  }
+}
+
 // `mode === 'edit'` re-uses the same form to PATCH an existing menu_item via
 // PUT /api/restaurant/menu/:id. The data model has one document per variant
 // (rows in the table sharing item_group_id), so edit mode operates on a
@@ -167,6 +182,14 @@ export default function ItemFormModal({
   const [imageUrl, setImageUrl] = useState<string>(seed.imageUrl);
   const [thumbnailUrl, setThumbnailUrl] = useState<string>(seed.thumbnailUrl);
   const [imageS3Key, setImageS3Key] = useState<string>(seed.imageS3Key);
+  // Display-only metadata for the currently-attached image. For a fresh
+  // upload it's the selected File's name + MIME type; for edit mode it's
+  // derived from the existing S3 key so the UI still shows a label
+  // instead of the raw URL.
+  const [imageFileMeta, setImageFileMeta] = useState<{ name: string; type: string } | null>(() => {
+    const base = baseNameFromPath(seed.imageS3Key || seed.imageUrl);
+    return base ? { name: base, type: '' } : null;
+  });
   const [imgBusy, setImgBusy] = useState<boolean>(false);
   const [showAdv, setShowAdv] = useState<boolean>(false);
   const [advGroupId, setAdvGroupId] = useState<string>(seed.advGroupId);
@@ -245,6 +268,7 @@ export default function ItemFormModal({
       setImageUrl(data.url || '');
       setThumbnailUrl(data.thumbnail_url || '');
       setImageS3Key(data.s3_key || '');
+      setImageFileMeta({ name: file.name, type: file.type || '' });
       showToast('Image uploaded!', 'success');
     } catch (err: unknown) {
       const e2 = err as { message?: string };
@@ -503,8 +527,8 @@ export default function ItemFormModal({
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
                     src={imageUrl}
-                    alt=""
-                    className="w-14 h-14 object-cover rounded-md border border-rim"
+                    alt={imageFileMeta?.name || 'Menu item image'}
+                    className="w-12 h-12 object-cover rounded-md border border-rim"
                   />
                 )}
                 <input
@@ -516,12 +540,15 @@ export default function ItemFormModal({
                 />
                 {imgBusy && <span className="text-sm text-dim">Uploading…</span>}
               </div>
-              <input
-                value={imageUrl}
-                onChange={(e) => setImageUrl(e.target.value)}
-                placeholder="Or paste image URL"
-                className="mt-1.5"
-              />
+              {/* Show the attached file's name + type only. The raw S3
+                  URL is intentionally NOT rendered anywhere — it stays in
+                  imageUrl state purely for form submission. */}
+              {!imgBusy && imageUrl && imageFileMeta?.name && (
+                <div className="mt-1.5 text-sm text-dim truncate">
+                  {imageFileMeta.name}
+                  {imageFileMeta.type ? ` • ${imageFileMeta.type}` : ''}
+                </div>
+              )}
             </div>
           </div>
 
