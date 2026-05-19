@@ -103,9 +103,9 @@ const revalidateOrderForPayment = async (orderId) => {
   if (!branch) return { valid: false, reason: 'Outlet no longer exists' };
   if (branch.is_active === false) return { valid: false, reason: 'Outlet is no longer active' };
 
-  // 3. Check order age — if older than 1 hour, reject and expire
+  // 3. Check order age — older than ORDER_EXPIRY_MINUTES (default 20 min), reject and expire
   const ageMs = Date.now() - new Date(order.created_at).getTime();
-  const ORDER_EXPIRY_MS = parseInt(process.env.ORDER_EXPIRY_MINUTES || '60') * 60 * 1000;
+  const ORDER_EXPIRY_MS = parseInt(process.env.ORDER_EXPIRY_MINUTES || '20') * 60 * 1000;
   if (ageMs > ORDER_EXPIRY_MS) {
     return { valid: false, reason: 'Order too old — checkout expired', shouldExpire: true };
   }
@@ -827,7 +827,7 @@ const handleEvent = async (event) => {
     }
 
     case 'order.expired': {
-      // Razorpay order expired (default 30min) — mark as missed sale
+      // Razorpay order expired — 20 min (expire_by set at order creation) — mark as missed sale
       const rpOrderId = event.payload?.order?.entity?.id;
       if (!rpOrderId) break;
 

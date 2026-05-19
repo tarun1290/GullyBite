@@ -183,7 +183,7 @@ router.get('/health-check', async (req, res) => {
 });
 
 // ─── STALE ORDER CLEANUP (every 15 minutes) ─────────────────
-// Expires PENDING_PAYMENT and PAYMENT_FAILED orders older than ORDER_EXPIRY_MINUTES (default 60).
+// Expires PENDING_PAYMENT and PAYMENT_FAILED orders older than ORDER_EXPIRY_MINUTES (default 20).
 // These become EXPIRED (missed sales) — distinct from CANCELLED for analytics.
 router.get('/order-cleanup', async (req, res) => {
   res.json({ ok: true, message: 'order-cleanup started', timestamp: new Date().toISOString() });
@@ -191,7 +191,7 @@ router.get('/order-cleanup', async (req, res) => {
   try {
     const orderSvc = require('../services/order');
     const { CONFIRMED_ORDER_STATES } = require('../core/orderStateEngine');
-    const expiryMinutes = parseInt(process.env.ORDER_EXPIRY_MINUTES || '60');
+    const expiryMinutes = parseInt(process.env.ORDER_EXPIRY_MINUTES || '20');
     const cutoff = new Date(Date.now() - expiryMinutes * 60 * 1000);
 
     // Find stale unpaid orders

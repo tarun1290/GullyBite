@@ -61,6 +61,39 @@ const getRzp = () => {
 
 // ─── 1. CREATE RAZORPAY ORDER (WhatsApp Pay) ──────────────────
 const createRazorpayOrder = async (order, customer) => {
+  // ─── ORDER-EXPIRY GATE ──────────────────────────────────────
+  // Refuse to mint a Razorpay order for an order whose payment
+  // window has already closed. The post-capture gates in
+  // webhooks/razorpay.js + webhooks/checkout.js still backstop
+  // clock drift between us and Razorpay; this just stops a doomed
+  // checkout at the source instead of capturing-then-refunding.
+  if (order?.expires_at && new Date() > new Date(order.expires_at)) {
+    throw new Error(`Order payment window has expired (order ${order.id})`);
+  }
+
+  // ─── IDEMPOTENCY ────────────────────────────────────────────
+  // If this gullybite order already has a live Razorpay order (a
+  // prior _placeOrderAndRequestPayment / RESEND that raced or
+  // retried), reuse it instead of minting a duplicate. The caller
+  // passes a slim { id, order_number, total_rs } object — not the
+  // full doc — so rp_order_id / expires_at are read from the orders
+  // collection in one findOne keyed by order.id. Callers only read
+  // `.id`, but the full Razorpay-order shape is mirrored for safety.
+  {
+    const existing = await col('orders').findOne(
+      { _id: order.id },
+      { projection: { rp_order_id: 1, expires_at: 1 } },
+    );
+    if (existing?.rp_order_id && existing.expires_at && new Date() < new Date(existing.expires_at)) {
+      return {
+        id: existing.rp_order_id,
+        amount: Math.round(order.total_rs * 100),
+        currency: 'INR',
+        status: 'created',
+      };
+    }
+  }
+
   // 20-minute payment window — matches the order doc's expires_at set
   // at order creation (services/order.js, services/orderCreate.service.js,
   // webhooks/checkout.js). Razorpay rejects payment attempts past
@@ -93,6 +126,15 @@ const createRazorpayOrder = async (order, customer) => {
       customer_wa : customer.wa_phone || customer.bsuid || '',
     },
   });
+
+  // Write-back so a duplicate _placeOrderAndRequestPayment / RESEND
+  // for the same gullybite order reuses this Razorpay order via the
+  // idempotency check above instead of creating another. Keyed by
+  // order.id (the slim object's id == the orders doc _id).
+  await col('orders').updateOne(
+    { _id: order.id },
+    { $set: { rp_order_id: rzpOrder.id, rp_order_created_at: new Date() } },
+  );
 
   const expiresAt = new Date(Date.now() + EXPIRY_MS);
   await col('payments').insertOne({
@@ -132,6 +174,40 @@ const createRazorpayOrder = async (order, customer) => {
 // degrade gracefully (continue without rp_order_id) or fail the flow.
 const createRazorpayOrderRaw = async ({ amountRs, currency = 'INR', receipt, notes = {}, close_by } = {}) => {
   if (!amountRs || amountRs <= 0) throw new Error('createRazorpayOrderRaw: amountRs must be > 0');
+  // ─── ORDER-EXPIRY GATE ──────────────────────────────────────
+  // This raw helper receives no order doc — the order's expires_at
+  // reaches us as `close_by` (Unix seconds), derived from
+  // order.expires_at by the sole caller (webhooks/whatsapp.js). If
+  // that window has already elapsed, refuse to create the Razorpay
+  // order rather than minting one that's instantly stale.
+  if (close_by && Date.now() > Number(close_by) * 1000) {
+    const oid = notes?.gullybite_order_id || notes?.client_order_id || receipt || 'unknown';
+    throw new Error(`Order payment window has expired (order ${oid})`);
+  }
+
+  // ─── IDEMPOTENCY ────────────────────────────────────────────
+  // Reuse an existing live Razorpay order for the same gullybite
+  // order rather than minting a duplicate when _sendOrderCheckout
+  // fires twice. One findOne keyed by the order id carried in
+  // notes.gullybite_order_id (same fallback chain as the expiry
+  // log); order_number is also matched so a client_order_id /
+  // receipt fallback still resolves.
+  const orderRef = notes?.gullybite_order_id || notes?.client_order_id || receipt || null;
+  if (orderRef) {
+    const existing = await col('orders').findOne(
+      { $or: [{ _id: orderRef }, { order_number: orderRef }] },
+      { projection: { rp_order_id: 1, expires_at: 1 } },
+    );
+    if (existing?.rp_order_id && existing.expires_at && new Date() < new Date(existing.expires_at)) {
+      return {
+        id: existing.rp_order_id,
+        amount: Math.round(Number(amountRs) * 100),
+        currency,
+        status: 'created',
+      };
+    }
+  }
+
   // 20-minute payment window — matches createRazorpayOrder above and the
   // order doc's expires_at. Razorpay rejects late payment attempts at
   // the gateway before they reach our webhook, so the customer's UI
@@ -152,6 +228,15 @@ const createRazorpayOrderRaw = async ({ amountRs, currency = 'INR', receipt, not
     ...(close_by ? { close_by } : {}),
     notes: notes || {},
   });
+  // Write-back so a duplicate _sendOrderCheckout for the same
+  // gullybite order reuses this Razorpay order via the idempotency
+  // check above instead of creating another.
+  if (orderRef) {
+    await col('orders').updateOne(
+      { $or: [{ _id: orderRef }, { order_number: orderRef }] },
+      { $set: { rp_order_id: rzpOrder.id, rp_order_created_at: new Date() } },
+    );
+  }
   return rzpOrder; // { id: 'order_…', amount, currency, status, ... }
 };
 

@@ -1042,12 +1042,29 @@ const _sendOrderCheckout = async (pid, token, to, { orderNumber, items, charges,
           ).catch((err) => log.warn({ err: err?.message, orderId: order.id }, 'orders.rp_order_id persist failed (continuing)'));
         }
       } catch (rpErr) {
+        // Order-expiry gate (services/payment.js) — distinct from a
+        // Razorpay/network failure: the order's payment window has
+        // already closed, so there is nothing to retry. Tell the
+        // customer and abort the checkout send entirely rather than
+        // falling through to wa.sendPaymentRequest with a null
+        // rp_order_id (which would invite a doomed payment attempt).
+        if (rpErr?.message && rpErr.message.includes('payment window has expired')) {
+          log.warn({ err: rpErr.message, orderNumber: order.order_number }, 'razorpay pre-create skipped — order expired');
+          await wa.sendText(pid, token, to, 'This order has expired. Please place a new order.');
+          return;
+        }
+        // Non-expiry Razorpay/network failure: previously this fell
+        // through to wa.sendPaymentRequest with rpOrderId=null, handing
+        // the customer a payment button that fails when tapped. Abort
+        // the checkout send and tell them to retry instead.
         log.warn({
           err: rpErr?.message,
           status: rpErr?.statusCode || rpErr?.response?.status,
           body: rpErr?.error || rpErr?.response?.data,
           orderNumber: order.order_number,
-        }, 'razorpay pre-create failed — continuing without rp_order_id');
+        }, 'razorpay pre-create failed — aborting checkout send');
+        await wa.sendText(pid, token, to, 'Payment system is temporarily unavailable. Please try placing the order again in a few minutes.');
+        return;
       }
 
       await wa.sendPaymentRequest(pid, token, to, {

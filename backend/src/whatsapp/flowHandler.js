@@ -623,13 +623,39 @@ async function _placeOrderAndRequestPayment(tenant, convo, customer, from, { dis
       );
     } catch (err) {
       log.error({ err, orderId: order._id }, 'createRazorpayOrder failed — marking order as payment_failed');
+      // Order-expiry gate (services/payment.js) gets distinct copy AND
+      // a distinct terminal state — a closed payment window is
+      // EXPIRED_PAYMENT, not a generic CANCELLED/failed. State reset
+      // below is unchanged.
+      const expired = err?.message && err.message.includes('payment window has expired');
+      // Route the status change through the strict state engine so
+      // order_state_log + the order.updated bus/socket fan-out fire
+      // (the prior direct updateOne bypassed all of that). The order is
+      // in PENDING_PAYMENT here — both PENDING_PAYMENT → EXPIRED_PAYMENT
+      // and → CANCELLED are allowed transitions. payment_status is not
+      // managed by the engine, so it's written separately in the same
+      // guarded block. Inner try/catch retained: a transition/write
+      // failure must not break the WA reply + state reset below.
       try {
+        const { transitionOrder } = require('../core/orderStateEngine');
+        await transitionOrder(
+          String(order._id),
+          expired ? 'EXPIRED_PAYMENT' : 'CANCELLED',
+          {
+            actor: 'system',
+            actorType: 'system',
+            cancelReason: expired ? 'payment_window_expired' : 'razorpay_create_failed',
+            metadata: { source: '_placeOrderAndRequestPayment', err: err?.message || null },
+          },
+        );
         await col('orders').updateOne(
           { _id: order._id },
-          { $set: { status: 'CANCELLED', payment_status: 'failed', updated_at: new Date() } }
+          { $set: { payment_status: expired ? 'expired' : 'failed', updated_at: new Date() } },
         );
-      } catch (_) { /* swallow */ }
-      await _send(tenant, from, _textBody('Payment setup failed. Please try again shortly.'));
+      } catch (_) { /* swallow — WA reply + state reset still proceed */ }
+      await _send(tenant, from, _textBody(expired
+        ? 'This order has expired. Please place a new order.'
+        : 'Payment setup failed. Please try again shortly.'));
       await _setState(convo._id, STATE.HOME, convo.session_data);
       await _sendHome(tenant, from, customer.name);
       return;
@@ -799,7 +825,12 @@ async function _handleAwaitPayment(tenant, convo, customer, from, input) {
       );
     } catch (err) {
       log.error({ err, orderId }, 'RESEND_PAYMENT_LINK: createRazorpayOrder failed');
-      await _send(tenant, from, _textBody("Couldn't create a new payment link. Please try again in a moment."));
+      // Order-expiry gate (services/payment.js) gets distinct copy —
+      // a closed window can't be resent, only re-ordered.
+      const expired = err?.message && err.message.includes('payment window has expired');
+      await _send(tenant, from, _textBody(expired
+        ? 'This order has expired. Please place a new order.'
+        : "Couldn't create a new payment link. Please try again in a moment."));
       return;
     }
 
