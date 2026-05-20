@@ -15,7 +15,6 @@
 
 const bus = require('./bus');
 const whatsappListener = require('./listeners/whatsappListener');
-const notificationListener = require('./listeners/notificationListener');
 const analyticsListener = require('./listeners/analyticsListener');
 const sseListener = require('./listeners/sseListener');
 const walletListener = require('./listeners/walletListener');
@@ -25,10 +24,6 @@ const EVENTS = ['order.created', 'order.updated', 'payment.completed', 'user.cre
 if (!global.__eventsBooted) {
   // Customer-facing WhatsApp — only order.created (confirmation).
   bus.on('order.created', whatsappListener.onOrderCreated);
-
-  // Restaurant-manager notifications — order.created + order.updated.
-  bus.on('order.created', notificationListener.onOrderCreated);
-  bus.on('order.updated', notificationListener.onOrderUpdated);
 
   // Staff POS SSE fan-out — fire-and-forget push to tablets.
   // - order.created  → 'order' event (informational, status is pre-payment)

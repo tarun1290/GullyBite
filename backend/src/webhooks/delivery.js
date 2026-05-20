@@ -9,7 +9,6 @@ const { col, newId, connect } = require('../config/database');
 const { isWithinCSW } = require('../utils/csw');
 const orderSvc = require('../services/order');
 const wa = require('../services/whatsapp');
-const notify = require('../services/notify');
 const orderNotify = require('../services/orderNotify');
 const { resolveRecipient } = require('../services/customerIdentity');
 const { logActivity } = require('../services/activityLog');
@@ -222,14 +221,9 @@ router.post('/', express.json({ limit: '256kb' }), async (req, res) => {
 
     if (newStatus === 'cancelled' || newStatus === 'failed') {
       logActivity({ actorType: 'webhook', action: 'delivery.failed', category: 'delivery', description: `Delivery failed/cancelled`, resourceType: 'delivery', resourceId: String(delivery._id), severity: 'error' });
-      // 3PL cancelled/failed — notify manager, DON'T auto-cancel the order
-      if (branch?.restaurant_id) {
-        notify.sendManagerNotification(branch.restaurant_id, order.branch_id,
-          `⚠️ *Delivery ${newStatus}* for Order #${order.order_number}\n` +
-          `Reason: ${payload.reason || payload.cancellation_reason || 'Not specified'}\n` +
-          `Please re-dispatch or contact customer.`
-        ).catch(() => {});
-      }
+      // 3PL cancelled/failed — order is NOT auto-cancelled here (kept as a
+      // surfaced-to-dashboard fault so the restaurant can re-dispatch or
+      // reach out to the customer). Manager WhatsApp alerts removed.
     }
 
     // Mark webhook as processed

@@ -237,8 +237,6 @@ async function _handleCustomerNotification(payload) {
       });
     }
   } catch (err) { log.warn({ err, orderId: payload.orderId }, 'new_order broadcast failed'); }
-
-  try { require('../services/notify').notifyNewOrder(order); } catch (_) {}
 }
 
 async function _handleOrderDispatch(payload) {
@@ -248,7 +246,6 @@ async function _handleOrderDispatch(payload) {
   const deliveryService = require('../services/delivery');
   const wa = require('../services/whatsapp');
   const { resolveRecipient } = require('../services/customerIdentity');
-  const notify = require('../services/notify');
 
   const order = await orderSvc.getOrderDetails(payload.orderId);
   log.info(
@@ -357,27 +354,10 @@ async function _handleOrderDispatch(payload) {
       },
       'ORDER_DISPATCH: dispatch failed',
     );
-    try {
-      // Resolve the customer phone the same way services/proroutingState.js
-      // _resolveMessagingContext does — receiver_phone first, fall back to
-      // the customer doc's wa_phone/bsuid. Passed to sendManagerNotification
-      // so an "Auto-dispatch failed" alert never lands in the customer's
-      // WhatsApp thread when manager_phone or notification_phones happen to
-      // coincide with the customer's number.
-      let customerPhone = order.receiver_phone || null;
-      if (!customerPhone && order.customer_id) {
-        const customer = await col('customers').findOne({ _id: order.customer_id });
-        customerPhone = customer?.wa_phone || customer?.bsuid || null;
-      }
-      await notify.sendManagerNotification(
-        order.restaurant_id || order.branch_id, order.branch_id,
-        `⚠️ Auto-dispatch failed for Order #${order.order_number}: ${err.message}\nPlease dispatch manually from the dashboard.`,
-        { excludePhones: customerPhone }
-      );
-    } catch (_) {}
     // Swallow — we don't want to retry 3PL calls on non-retryable errors.
-    // The manager message is enough; re-raise only if you want the job
-    // system to back off and retry (e.g., add err.retryable checks here).
+    // The structured error is logged above via log.error; re-raise only if
+    // you want the job system to back off and retry (e.g., add
+    // err.retryable checks here).
   }
 }
 

@@ -22,7 +22,6 @@ const flowMgr = require('../services/flowManager');
 const couponSvc = require('../services/coupon');
 const etaSvc = require('../services/eta');
 const loyaltySvc = require('../services/loyaltyEngine');
-const notify = require('../services/notify');
 const { getNextRetryAt, retryDefaults } = require('../utils/retry');
 const { waMessageLimiter, waOrderLimiter, abuseDetector, isPhoneBlocked, isBlocked, rateLimit, adaptiveRateLimit, recordAbuseEvent, RateLimitExceededError, extractSenderIdentifier, extractPhoneNumberId } = require('../middleware/rateLimit');
 const customerIdentity = require('../services/customerIdentity');

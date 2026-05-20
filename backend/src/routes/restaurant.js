@@ -17,7 +17,6 @@ const { queueSync } = require('../services/catalogSyncQueue');
 const orderSvc = require('../services/order');
 const wa = require('../services/whatsapp');
 const etaSvc = require('../services/eta');
-const notify = require('../services/notify');
 const orderNotify = require('../services/orderNotify');
 const { logActivity: log } = require('../services/activityLog');
 const issueSvc = require('../services/issues');

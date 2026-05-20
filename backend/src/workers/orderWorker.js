@@ -29,10 +29,6 @@ async function processOrder(job) {
     return { skipped: true };
   }
 
-  // Send restaurant-manager WhatsApp alert.
-  const notify = require('../services/notify');
-  await notify.notifyNewOrder(order);
-
   // Update DB: atomic stamp + compound-and check so concurrent workers
   // (if we ever scale concurrency) don't double-process.
   const stamp = await col('orders').updateOne(

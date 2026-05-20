@@ -7,7 +7,6 @@ const { col, newId } = require('../config/database');
 const paymentSvc = require('../services/payment');
 const orderSvc = require('../services/order');
 const wa = require('../services/whatsapp');
-const notify = require('../services/notify');
 const orderNotify = require('../services/orderNotify');
 const { resolveRecipient } = require('../services/customerIdentity');
 const { getNextRetryAt, retryDefaults } = require('../utils/retry');
