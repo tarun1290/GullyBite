@@ -332,9 +332,18 @@ function _hashShort(input) {
 }
 
 const keys = {
-  // Order key built from (customer, branch, cart fingerprint). Two double-clicks
-  // with the same cart contents collapse to one row.
-  order(customerId, branchId, cart) {
+  // Order key. PREFERRED: key on the inbound WhatsApp message id (wamid) —
+  // one wamid per inbound webhook delivery from Meta, so Meta's own dedup
+  // contract carries us. A redelivered webhook collapses to the same row;
+  // a new inbound message (= a new ordering intent) always produces a
+  // fresh key, which is the right semantics for re-orders.
+  //
+  // FALLBACK (wamid not in scope): cart-fingerprint key. Same shape as
+  // before — collapses double-clicks on the same cart. This path runs
+  // under a shorter TTL (services/order.js ORDER_IDEM_TTL_MS) because the
+  // key is content-based and would otherwise block legitimate re-orders.
+  order(customerId, branchId, cart, wamid) {
+    if (wamid) return `order:${wamid}`;
     const lines = (cart || []).map(c => ({
       m: c.menuItemId || c.menu_item_id,
       q: c.qty || c.quantity,

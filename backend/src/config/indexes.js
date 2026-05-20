@@ -212,6 +212,16 @@ const INDEXES = [
   { collection: 'idempotency_keys', index: { type: 1, status: 1, created_at: -1 } },
   { collection: 'idempotency_keys', index: { reference_id: 1 }, options: { sparse: true } },
 
+  // Inbound-WA replay dedup — _webhook_dedup stores one row per inbound
+  // wamid (_id = msg.id, createdAt = insert time). Written at
+  // webhooks/whatsapp.js:660-675 to skip Meta's webhook retries. Mirrors
+  // the processed_events TTL: 24h is well beyond Meta's redelivery
+  // window, after which the dedup record is no longer needed. Without
+  // this TTL the collection grew unbounded. Rows written before this
+  // index existed lack createdAt and won't be auto-expired — benign;
+  // they'll just persist until cleared manually.
+  { collection: '_webhook_dedup', index: { createdAt: 1 }, options: { expireAfterSeconds: 86400 } },
+
   // Trust score — one row per user; lookups are always by user_id.
   { collection: 'user_trust', index: { user_id: 1 }, options: { unique: true } },
   { collection: 'user_trust', index: { trust_score: 1, updated_at: -1 } },

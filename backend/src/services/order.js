@@ -223,11 +223,20 @@ const createOrder = async (params) => {
   }
   if (params && params.idempotencyKey) {
     const { withIdempotency, keys: idemKeys } = require('../utils/withIdempotency');
+    // TTL split by key family. If the caller supplied a wamid, the key is
+    // `order:${wamid}` — each inbound WA message is a distinct intent, so
+    // the default 48h TTL is correct (covers any conceivable retry window
+    // without blocking re-orders). If the caller did NOT supply a wamid,
+    // the key is the cart-content hash, which would otherwise return a
+    // stale order for a customer re-ordering the same meal — cap to 5
+    // min just long enough to dedup double-clicks.
+    const idemOpts = { referenceId: params.customerId || null };
+    if (!params.wamid) idemOpts.ttlMs = ORDER_IDEM_TTL_MS;
     return withIdempotency(
       params.idempotencyKey,
       'order',
       () => _createOrderImpl(params),
-      { referenceId: params.customerId || null, ttlMs: ORDER_IDEM_TTL_MS }
+      idemOpts
     );
   }
   return _createOrderImpl(params);

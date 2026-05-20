@@ -868,7 +868,7 @@ const handleMessage = async (msg, senderIdentifiers, senderName, waAccount) => {
 // Tries to send the checkout button template with in-WhatsApp payment.
 // Falls back to the text-based sendOrderSummary if the template isn't approved or fails.
 // When checkout template succeeds, creates the order so Razorpay webhook can match it.
-const _sendOrderCheckout = async (pid, token, to, { orderNumber, items, charges, subtotal, deliveryFee, total, discount, dynamicNote, session, customer, waAccount }) => {
+const _sendOrderCheckout = async (pid, token, to, { orderNumber, items, charges, subtotal, deliveryFee, total, discount, dynamicNote, session, customer, waAccount, wamid }) => {
   // Try interactive order_details checkout (Razorpay in-WhatsApp payment)
   const checkoutEnabled = !!(process.env.RAZORPAY_WA_CONFIG_NAME && (await col('platform_settings').findOne({ _id: 'checkout_order' }))?.enabled);
   if (checkoutEnabled && session?.branchId && session?.cart?.length) {
@@ -966,7 +966,8 @@ const _sendOrderCheckout = async (pid, token, to, { orderNumber, items, charges,
       // [IDEMPOTENCY] Pass idempotencyKey so a double-click on the Pay button
       // (or a webhook retry, or a stuck client) returns the SAME order.
       const order = await orderSvc.createOrder({
-        idempotencyKey: idemKeys.order(customer?.id, session.branchId, session.cart),
+        idempotencyKey: idemKeys.order(customer?.id, session.branchId, session.cart, wamid),
+        wamid,
         convId       : session.convId || null,
         customerId   : customer?.id,
         branchId     : session.branchId,
@@ -1605,7 +1606,7 @@ const handleTextMessage = async (msg, customer, conv, waAccount) => {
       return;
     }
     const phone = '91' + phoneMatch[1];
-    await linkPhoneAndResumeOrder(phone, customer, conv, waAccount);
+    await linkPhoneAndResumeOrder(phone, customer, conv, waAccount, msg?.id);
     return;
   }
 
@@ -1622,6 +1623,7 @@ const handleTextMessage = async (msg, customer, conv, waAccount) => {
         total:       session.totalRs.toFixed(0),
         discount:    null,
         session, customer, waAccount,
+        wamid: msg?.id,
       });
       return;
     }
@@ -1668,6 +1670,7 @@ const handleTextMessage = async (msg, customer, conv, waAccount) => {
       discount:    { code: couponData.code, amountRs: result.discountRs },
       session: { ...session, coupon: couponData, discountRs: result.discountRs, totalRs: newTotal, charges: updatedCharges },
       customer, waAccount,
+      wamid: msg?.id,
     });
     return;
   }
@@ -1817,6 +1820,7 @@ const handleTextMessage = async (msg, customer, conv, waAccount) => {
       discount: { code: `${result.pointsRedeemed} pts`, amountRs: totalDiscount },
       session: { ...session, discountRs: totalDiscount, totalRs: newTotal, charges: updatedCharges },
       customer, waAccount,
+      wamid: msg?.id,
     });
     return;
   }
@@ -2125,6 +2129,7 @@ const handleLocationMessage = async (msg, customer, conv, waAccount) => {
       discount   : null,
       session: { branchId: branch.id, deliveryAddress: address || 'Your location', deliveryLat: latitude, deliveryLng: longitude },
       customer, waAccount,
+      wamid: msg?.id,
     });
     return;
   }
@@ -2562,6 +2567,7 @@ const handleCatalogOrder = async (msg, customer, conv, waAccount) => {
     dynamicNote,
     session: refreshedSession,
     customer, waAccount,
+    wamid: msg?.id,
   });
 
   if (cart.unavailable.length > 0) {
@@ -2799,7 +2805,8 @@ const handleInteractiveReply = async (msg, customer, conv, waAccount) => {
       // [IDEMPOTENCY] Same key shape as the checkout-flow caller above —
       // a double-confirm collapses to one order.
       const order = await orderSvc.createOrder({
-        idempotencyKey: idemKeys.order(customer.id, session.branchId, session.cart),
+        idempotencyKey: idemKeys.order(customer.id, session.branchId, session.cart, msg?.id),
+        wamid: msg?.id,
         convId       : conv.id,
         customerId   : customer.id,
         branchId     : session.branchId,
@@ -2981,6 +2988,7 @@ const handleInteractiveReply = async (msg, customer, conv, waAccount) => {
         discount:    null,
         session: { ...session, coupon: null, discountRs: 0, totalRs: updatedTotal, charges: restoredCharges },
         customer, waAccount,
+        wamid: msg?.id,
       });
       break;
     }
@@ -3709,7 +3717,7 @@ const handlePhoneShared = async (msg, customer, conv, waAccount) => {
     }
 
     const phone = '91' + phoneMatch[1];
-    await linkPhoneAndResumeOrder(phone, customer, conv, waAccount);
+    await linkPhoneAndResumeOrder(phone, customer, conv, waAccount, msg?.id);
   } catch (err) {
     log.error({ err }, 'handlePhoneShared error');
     await wa.sendText(pid, token, to,
@@ -3719,7 +3727,7 @@ const handlePhoneShared = async (msg, customer, conv, waAccount) => {
 };
 
 // Links a phone number to a BSUID-only customer and resumes the CONFIRM_ORDER flow
-const linkPhoneAndResumeOrder = async (phone, customer, conv, waAccount) => {
+const linkPhoneAndResumeOrder = async (phone, customer, conv, waAccount, wamid) => {
   const pid = waAccount.phone_number_id;
   const token = waAccount.access_token;
   const to = customerIdentity.resolveRecipient(customer);
@@ -3775,7 +3783,8 @@ const linkPhoneAndResumeOrder = async (phone, customer, conv, waAccount) => {
   // re-sends their phone number quickly. The cart-fingerprint key collapses
   // both attempts to one order.
   const order = await orderSvc.createOrder({
-    idempotencyKey: idemKeys.order(customer.id, session.branchId, session.cart),
+    idempotencyKey: idemKeys.order(customer.id, session.branchId, session.cart, wamid),
+    wamid,
     convId       : freshConv.id,
     customerId   : customer.id,
     branchId     : session.branchId,
