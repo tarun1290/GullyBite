@@ -122,13 +122,37 @@ async function main() {
   const paymentId = `test_pay_${Date.now()}`;
   const upd = await col('orders').updateOne(
     { _id: order._id },
-    { $set: {
+    {
+      $set: {
         status: 'PAID',
         paid_at: now,
         payment_id: paymentId,
         payment_method: 'razorpay_test_simulated',
         updated_at: now,
-      } },
+        // notified_at is what the dashboard's pending-order poll keys on
+        // to distinguish never-shown vs already-shown orders. Recycling
+        // an existing order without resetting this leaves the new-order
+        // modal in a half-shown state.
+        notified_at: now,
+      },
+      // Recycling a previously-completed order leaves every downstream
+      // lifecycle/petpooja/prorouting field stamped from its prior life.
+      // The stalest of those — acknowledged_at — makes /accept's CAS
+      // (filter: { acknowledged_at: { $exists: false } }) no-op
+      // immediately, so the order never cleanly leaves PAID and the
+      // new-order modal re-fires endlessly. Clear every downstream
+      // field so the recycled order behaves like a genuine first-time
+      // PAID order.
+      $unset: {
+        acknowledged_at: '', acknowledged_by: '',
+        confirmed_at: '', preparing_at: '', packed_at: '',
+        dispatched_at: '', delivered_at: '', cancelled_at: '',
+        decline_reason: '', cancellation_reason: '', cancellation_fault_fee: '',
+        refund_id: '', refund_amount_rs: '',
+        petpooja_order_id: '', petpooja_pushed_at: '', petpooja_push_failed: '', petpooja_pos_status: '',
+        prorouting_order_id: '', prorouting_dispatch_attempts: '',
+      },
+    },
   );
   console.log(`\nMarked PAID (matched=${upd.matchedCount}, modified=${upd.modifiedCount}, payment_id=${paymentId})`);
 
