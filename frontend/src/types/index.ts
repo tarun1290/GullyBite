@@ -345,6 +345,7 @@ export type OrderStatus =
   | 'PENDING_PAYMENT'
   | 'PAYMENT_FAILED'
   | 'EXPIRED'
+  | 'EXPIRED_PAYMENT'
   | 'PAID'
   | 'CONFIRMED'
   | 'PREPARING'

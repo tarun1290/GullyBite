@@ -9,6 +9,14 @@ const { calculateDynamicDeliveryFee } = require('./dynamicPricing');
 const log = require('../utils/logger').child({ component: 'Order' });
 const Brand = require('../models/Brand');
 
+// Idempotency TTL for order-creation keys. Short on purpose: the key is a
+// cart-content hash, so the default 48h causes a legitimate re-order with
+// identical items to resolve to the prior order — whose `expires_at` is
+// long past, which then trips the payment-expiry gate downstream. 5 min
+// is plenty to dedup double-clicks / webhook retries without blocking
+// genuine reorders.
+const ORDER_IDEM_TTL_MS = 5 * 60 * 1000;
+
 // ─── GET OR CREATE CUSTOMER ───────────────────────────────────
 // [BSUID] Delegates to customerIdentity.js for universal identity resolution
 // Backward-compatible: accepts (waPhone, name) OR ({ bsuid, wa_phone, profile_name })
@@ -219,7 +227,7 @@ const createOrder = async (params) => {
       params.idempotencyKey,
       'order',
       () => _createOrderImpl(params),
-      { referenceId: params.customerId || null }
+      { referenceId: params.customerId || null, ttlMs: ORDER_IDEM_TTL_MS }
     );
   }
   return _createOrderImpl(params);

@@ -313,7 +313,7 @@ export default function NewOrderPopup() {
   // users. Prefer `display_order_id`; fall back to a slice of the
   // internal id for old orders. `currentId` is the queue-cycle index
   // tracker — useful as the absolute last resort if neither is set.
-  const orderRef = o?.display_order_id || (o?.id ? `#${o.id.slice(-6)}` : currentId);
+  const orderRef = o?.display_order_id || (o?.id ? `#${o.id.slice(-6)}` : (currentId ? `#${currentId}` : ''));
   // Single instructions string sourced from whichever field the order
   // doc actually carries (see PopupOrder type for why all three names
   // are accepted). Trimmed empty values count as "no instructions".
@@ -369,7 +369,7 @@ export default function NewOrderPopup() {
           <>
             <div className="flex justify-between gap-3 mb-2.5">
               <div className="min-w-0">
-                <div className="font-bold truncate">#{orderRef}</div>
+                <div className="font-bold truncate">{orderRef}</div>
                 <div className="text-xs text-dim truncate">
                   {fmtTime(o.created_at)}
                 </div>

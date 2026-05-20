@@ -375,7 +375,7 @@ async function transitionOrder(orderId, nextState, opts = {}) {
   // Fire-and-forget: a conversations write failure must not abort the
   // already-committed order transition.
   const TERMINAL_FAILURE_STATES = new Set([
-    'EXPIRED', 'CANCELLED', 'REJECTED_BY_RESTAURANT',
+    'EXPIRED', 'EXPIRED_PAYMENT', 'CANCELLED', 'REJECTED_BY_RESTAURANT',
     'RESTAURANT_TIMEOUT', 'PAYMENT_FAILED',
   ]);
   if (TERMINAL_FAILURE_STATES.has(nextState)) {

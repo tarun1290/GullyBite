@@ -613,7 +613,7 @@ async function applyProroutingState(order, statusRaw, eventBody = {}) {
   // and we refund the customer in full — platform absorbs the Razorpay
   // fee per business policy.
   if (status === 'cancelled') {
-    const TERMINAL_ORDER_STATES = ['CANCELLED', 'DELIVERED', 'EXPIRED', 'RTO_COMPLETE',
+    const TERMINAL_ORDER_STATES = ['CANCELLED', 'DELIVERED', 'EXPIRED', 'EXPIRED_PAYMENT', 'RTO_COMPLETE',
       'REJECTED_BY_RESTAURANT', 'RESTAURANT_TIMEOUT', 'NO_DELIVERY_AVAILABLE'];
     if (TERMINAL_ORDER_STATES.includes(order.status)) {
       log.info({ orderId: order._id, orderStatus: order.status }, 'cancelled callback: GullyBite order already terminal — no-op');

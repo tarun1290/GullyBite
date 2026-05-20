@@ -276,7 +276,7 @@ const orders = {
     delivery_fee_rs:       { type: 'number' },
     discount_rs:           { type: 'number' },
     total_rs:              { type: 'number', required: true },
-    status:                { type: 'string', required: true, enum: ['PENDING_PAYMENT', 'PAID', 'CONFIRMED', 'PREPARING', 'PACKED', 'DISPATCHED', 'DELIVERED', 'CANCELLED', 'REJECTED_BY_RESTAURANT', 'RESTAURANT_TIMEOUT', 'NO_DELIVERY_AVAILABLE', 'EXPIRED_PAYMENT', 'RTO_IN_PROGRESS', 'RTO_COMPLETE'] },
+    status:                { type: 'string', required: true, enum: ['PENDING_PAYMENT', 'PAYMENT_FAILED', 'PAID', 'CONFIRMED', 'PREPARING', 'PACKED', 'DISPATCHED', 'DELIVERED', 'CANCELLED', 'REJECTED_BY_RESTAURANT', 'RESTAURANT_TIMEOUT', 'NO_DELIVERY_AVAILABLE', 'EXPIRED', 'EXPIRED_PAYMENT', 'RTO_IN_PROGRESS', 'RTO_COMPLETE'] },
     // 20-minute payment window stamped at order create. Read by the
     // payment-expiry gate in webhooks/razorpay.js + webhooks/checkout.js
     // to refund late captures, and by the order_details message builder

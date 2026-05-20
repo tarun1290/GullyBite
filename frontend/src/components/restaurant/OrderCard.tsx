@@ -4,10 +4,15 @@ import { useState } from 'react';
 import type { Order, OrderStatus } from '../../types';
 
 // Status → [badge class, label]. Mirrors sbadge() in legacy orders.js:33-50.
+// EXPIRED (`bd`, dim) is missed-sale (no capture). EXPIRED_PAYMENT (`br`,
+// red) is captured-then-refunded — distinct money-back terminal; visually
+// related to CANCELLED/PAYMENT_FAILED via the shared `br` family, but the
+// label disambiguates.
 const STATUS_BADGE: Record<string, [string, string]> = {
   PENDING_PAYMENT: ['ba', 'Pending Payment'],
   PAYMENT_FAILED:  ['br', 'Payment Failed'],
   EXPIRED:         ['bd', 'Expired'],
+  EXPIRED_PAYMENT: ['br', 'Refunded (expired)'],
   PAID:            ['bb', 'Paid'],
   CONFIRMED:       ['bg', 'Confirmed'],
   PREPARING:       ['ba', 'Preparing'],
@@ -33,20 +38,25 @@ const NEXT_STATUS: Record<string, [string, string]> = {
 
 const ACTIVE_ETA_STATUSES = new Set<string>(['PAID', 'CONFIRMED', 'PREPARING', 'PACKED', 'DISPATCHED']);
 
-// Row left-accent color by status, mirroring the badge color family. Lets the
-// operator scan the orders table by color before reading the badge text.
-const STATUS_ROW_COLOR: Record<string, string> = {
-  PENDING_PAYMENT: 'var(--gold)',
-  PREPARING:       'var(--gold)',
-  PAYMENT_FAILED:  'var(--red)',
-  CANCELLED:       'var(--red)',
-  EXPIRED:         'var(--mute)',
-  PAID:            'var(--blue)',
-  PACKED:          'var(--blue)',
-  CONFIRMED:       'var(--wa)',
-  DELIVERED:       'var(--wa)',
-  PAID_OUT:        'var(--wa)',
-  DISPATCHED:      'var(--gb-teal-700)',
+// Row left-accent class by status, mirroring the badge color family. Lets
+// the operator scan the orders table by color before reading the badge
+// text. Tailwind v4 arbitrary-value classes pull the project's CSS-var
+// palette directly (same pattern as bg-[var(--acc-glow)] elsewhere) —
+// each value is a static string literal so JIT picks it up. Replaces an
+// inline style={{}} on the row.
+const STATUS_ROW_BORDER_CLS: Record<string, string> = {
+  PENDING_PAYMENT: 'border-l-[3px] border-l-[var(--gold)]',
+  PREPARING:       'border-l-[3px] border-l-[var(--gold)]',
+  PAYMENT_FAILED:  'border-l-[3px] border-l-[var(--red)]',
+  CANCELLED:       'border-l-[3px] border-l-[var(--red)]',
+  EXPIRED:         'border-l-[3px] border-l-[var(--mute)]',
+  EXPIRED_PAYMENT: 'border-l-[3px] border-l-[var(--red)]',
+  PAID:            'border-l-[3px] border-l-[var(--blue)]',
+  PACKED:          'border-l-[3px] border-l-[var(--blue)]',
+  CONFIRMED:       'border-l-[3px] border-l-[var(--wa)]',
+  DELIVERED:       'border-l-[3px] border-l-[var(--wa)]',
+  PAID_OUT:        'border-l-[3px] border-l-[var(--wa)]',
+  DISPATCHED:      'border-l-[3px] border-l-[var(--gb-teal-700)]',
 };
 
 interface StatusBadgeProps {
@@ -131,14 +141,13 @@ export default function OrderCard({ order, onStatusChange, onViewDetail, onDecli
     }
   };
 
-  const statusColor = STATUS_ROW_COLOR[order.status] || 'transparent';
+  const rowBorderCls = STATUS_ROW_BORDER_CLS[order.status] || '';
 
   return (
-    <tr
-      // borderLeft colour comes from STATUS_ROW_COLOR by order.status at
-      // runtime (gold/red/mute/blue/wa/teal — 7 distinct CSS vars).
-      style={{ borderLeft: `3px solid ${statusColor}` }}
-    >
+    // Left-border colour comes from STATUS_ROW_BORDER_CLS by order.status
+    // (gold/red/mute/blue/wa/teal — 7 distinct CSS vars). Static-literal
+    // arbitrary-value classes so Tailwind v4 JIT picks them up.
+    <tr className={rowBorderCls}>
       <td><span className="mono">{order.display_order_id || `#${(order.id || '').slice(-6) || '????'}`}</span></td>
       <td>
         <div>{order.customer_name || '—'}</div>

@@ -94,6 +94,7 @@ router.get('/overview', async (req, res, next) => {
           pending: { $sum: { $cond: [{ $eq: ['$status', 'PENDING_PAYMENT'] }, 1, 0] } },
           payment_failed: { $sum: { $cond: [{ $eq: ['$status', 'PAYMENT_FAILED'] }, 1, 0] } },
           expired: { $sum: { $cond: [{ $eq: ['$status', 'EXPIRED'] }, 1, 0] } },
+          expired_payment: { $sum: { $cond: [{ $eq: ['$status', 'EXPIRED_PAYMENT'] }, 1, 0] } },
           cancelled: { $sum: { $cond: [{ $eq: ['$status', 'CANCELLED'] }, 1, 0] } },
         }}],
         // Customer analytics — only from confirmed orders
@@ -114,7 +115,7 @@ router.get('/overview', async (req, res, next) => {
 
     const [result] = await col('orders').aggregate(pipeline).toArray();
     const t = result.confirmed[0] || { order_count: 0, gmv: 0, platform_fees: 0, customers: [], restaurants: [], delivered: 0 };
-    const f = result.funnel[0] || { total_checkouts: 0, pending: 0, payment_failed: 0, expired: 0, cancelled: 0 };
+    const f = result.funnel[0] || { total_checkouts: 0, pending: 0, payment_failed: 0, expired: 0, expired_payment: 0, cancelled: 0 };
     const customerCount = t.customers.length;
     const newCustomerCount = result.newCustomers[0]?.count || 0;
     const repeatCount = result.repeatCustomers[0]?.count || 0;
@@ -143,6 +144,10 @@ router.get('/overview', async (req, res, next) => {
       completion_rate: t.order_count > 0 ? parseFloat((t.delivered / t.order_count * 100).toFixed(1)) : 0,
       // Missed-sale / funnel breakdown
       missed_sales: f.expired,
+      // Captured-then-refunded (payment landed after order expires_at) —
+      // distinct from missed_sales (no capture). See orderStateEngine.js
+      // EXPIRED vs EXPIRED_PAYMENT.
+      expired_payment_refunded: f.expired_payment,
       payment_failures: f.payment_failed,
       pending_checkouts: f.pending,
       cancelled: f.cancelled,

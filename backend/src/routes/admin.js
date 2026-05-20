@@ -724,9 +724,14 @@ router.get('/stats', async (req, res) => {
       col('webhook_logs').countDocuments({ error_message: { $ne: null } }),
     ]);
 
-    // Fetch missed-sale count separately (non-blocking)
-    const [expiredCount, paymentFailedCount] = await Promise.all([
+    // Fetch missed-sale + refunded-late counts separately (non-blocking).
+    // EXPIRED_PAYMENT is captured-then-refunded (payment landed past the
+    // order's expires_at) — distinct from EXPIRED (no capture) per the
+    // orderStateEngine. Exposed as a sibling field; not folded into
+    // missed_sales.total to preserve the existing client contract.
+    const [expiredCount, expiredPaymentCount, paymentFailedCount] = await Promise.all([
       col('orders').countDocuments({ status: 'EXPIRED' }),
+      col('orders').countDocuments({ status: 'EXPIRED_PAYMENT' }),
       col('orders').countDocuments({ status: 'PAYMENT_FAILED' }),
     ]);
 
@@ -735,7 +740,7 @@ router.get('/stats', async (req, res) => {
       orders     : { total: totalOrders, delivered: deliveredOrders, pending: pendingOrders, cancelled: cancelledOrders, today: todayOrders },
       revenue    : { total_rs: allNonCancelledOrders[0]?.sum || 0, today_rs: todayOrders2[0]?.sum || 0, week_rs: weekOrders[0]?.sum || 0 },
       customers  : { total: totalCustomers, today: todayCustomers },
-      missed_sales: { expired: expiredCount, payment_failed: paymentFailedCount, total: expiredCount + paymentFailedCount },
+      missed_sales: { expired: expiredCount, expired_payment: expiredPaymentCount, payment_failed: paymentFailedCount, total: expiredCount + paymentFailedCount },
       logs       : { total: totalLogs, unprocessed: unprocessedLogs, errors: errorLogs },
     });
   } catch (err) {

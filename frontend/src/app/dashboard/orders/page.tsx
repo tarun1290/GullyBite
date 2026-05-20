@@ -21,6 +21,7 @@ const FILTER_CHIPS: ReadonlyArray<readonly [FilterValue, string]> = [
   ['DELIVERED',       '🎉 Delivered'],
   ['PAYMENT_FAILED',  '❌ Failed'],
   ['EXPIRED',         '⏱ Expired'],
+  ['EXPIRED_PAYMENT', '💸 Refunded (expired)'],
 ];
 
 // Legacy uses a WebSocket push to refresh the Orders tab (dashboard.html:2787-2844).

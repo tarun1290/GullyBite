@@ -220,7 +220,7 @@ async function handleNoRiderFault(orderId) {
   // Idempotency — already in a terminal state (incl. NO_DELIVERY_AVAILABLE
   // from a duplicate webhook) means there's nothing to do.
   const TERMINAL = new Set([
-    'DELIVERED', 'CANCELLED', 'EXPIRED', 'RTO_COMPLETE',
+    'DELIVERED', 'CANCELLED', 'EXPIRED', 'EXPIRED_PAYMENT', 'RTO_COMPLETE',
     'REJECTED_BY_RESTAURANT', 'RESTAURANT_TIMEOUT', 'NO_DELIVERY_AVAILABLE',
   ]);
   if (TERMINAL.has(order.status)) {

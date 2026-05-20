@@ -34,6 +34,7 @@ const FUNNEL_ORDER = ['initiated', 'address', 'browsing', 'cart', 'payment_pendi
 // sync if you ever add a status (e.g., NO_DELIVERY_AVAILABLE).
 const TERMINAL_FAILURE_STATUSES = new Set([
   'EXPIRED',
+  'EXPIRED_PAYMENT',
   'CANCELLED',
   'REJECTED_BY_RESTAURANT',
   'RESTAURANT_TIMEOUT',

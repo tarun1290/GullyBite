@@ -178,7 +178,12 @@ async function withIdempotency(key, type, handler, options = {}) {
         existing.response?.id ||
         existing.reference_id;
       if (cachedOrderId) {
-        const STALE_STATUSES = ['EXPIRED', 'CANCELLED', 'REJECTED_BY_RESTAURANT', 'RESTAURANT_TIMEOUT'];
+        // EXPIRED_PAYMENT is included as defense-in-depth: with the current
+        // 5-min order idempotency TTL (services/order.js ORDER_IDEM_TTL_MS)
+        // an order can't reach this terminal status before the cache row
+        // expires, but if the TTL is ever lengthened the bypass must
+        // recognise the refunded-late terminal too.
+        const STALE_STATUSES = ['EXPIRED', 'EXPIRED_PAYMENT', 'CANCELLED', 'REJECTED_BY_RESTAURANT', 'RESTAURANT_TIMEOUT'];
         try {
           const client = globalThis._mongoClient;
           if (client) {
