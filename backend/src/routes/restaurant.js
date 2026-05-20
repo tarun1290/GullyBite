@@ -6173,7 +6173,11 @@ router.post('/orders/:orderId/accept', requireApproved, requireStaffPermission('
       // change behaviour.
       return res.json({ success: true, alreadyAcknowledged: true, status: result.status });
     }
-    res.json({ success: true, status: 'CONFIRMED' });
+    // result.status is 'PREPARING' when the auto-advance ran (the
+    // normal path) and 'CONFIRMED' when the CONFIRMED→PREPARING
+    // advance failed and the order is sitting at CONFIRMED. The
+    // dashboard reads this to refresh its row's status badge.
+    res.json({ success: true, status: result.status });
   } catch (e) {
     req.log?.error?.({ err: e, orderId: req.params.orderId }, 'order accept failed');
     res.status(500).json({ success: false, message: "Internal server error" });
@@ -6215,19 +6219,6 @@ router.post('/orders/:orderId/decline', express.json(), requireApproved, require
       }
     }
 
-    // Stamp acknowledgement BEFORE the cancellation handler — it does
-    // its own refund + state transition, and we want the modal to close
-    // even if the customer-WA leg of the handler fails.
-    const now = new Date();
-    await col('orders').updateOne(
-      { _id: orderId, acknowledged_at: { $exists: false } },
-      { $set: {
-          acknowledged_at: now,
-          acknowledged_by: req.userId || null,
-          decline_reason: reason,
-      } }
-    );
-
     // Centralized fault flow: refund → REJECTED_BY_RESTAURANT transition
     // → cancellation_fault_fee on order doc → settlement accumulator
     // increment → customer order_cancelled + refund_processed templates.
@@ -6241,6 +6232,33 @@ router.post('/orders/:orderId/decline', express.json(), requireApproved, require
       req.log?.error?.({ err, orderId }, 'decline fault handler failed');
       return res.status(502).json({ error: 'Refund failed — order not cancelled. Please retry or contact support.' });
     }
+
+    // handleRestaurantFault returns { faulted: true, ... } on success
+    // and { skipped: true, reason } on its internal status guards
+    // (not-found / non-PAID race). The skipped path is NOT a success —
+    // surface it as 409 so the dashboard doesn't show a fake confirmation
+    // and the acknowledged_at stamp below is reached ONLY after the
+    // fault flow actually completed.
+    if (!result?.faulted) {
+      return res.status(409).json({ error: `Decline not processed: ${result?.reason || 'unknown'}` });
+    }
+
+    // Stamp acknowledgement AFTER the fault handler succeeded. The
+    // stamp must not be left behind on the throw path (502 above) or
+    // the skipped path (409 above) — if it were, the early
+    // `if (order.acknowledged_at) return success` short-circuit at the
+    // top of this handler would fire on every subsequent decline click
+    // and silently report success on an order that's still PAID. Now
+    // acknowledged_at exclusively means "decline genuinely completed".
+    const now = new Date();
+    await col('orders').updateOne(
+      { _id: orderId, acknowledged_at: { $exists: false } },
+      { $set: {
+          acknowledged_at: now,
+          acknowledged_by: req.userId || null,
+          decline_reason: reason,
+      } }
+    );
 
     ws.broadcastOrder(req.restaurantId, 'order_acknowledged', {
       orderId, action: 'decline', newStatus: result?.status || 'REJECTED_BY_RESTAURANT',

@@ -128,8 +128,14 @@ async function applyOrderAcceptance(orderId, opts) {
   // ── 3. State transition PAID → CONFIRMED ──────────────────────
   // Owns the order_status_changed bus/socket fan-out via
   // orderStateEngine. actor/actorType drive the order_state_log entry.
+  // `confirmed` flag gates the PREPARING auto-advance below: if this
+  // call threw, the order is still PAID and a CONFIRMED→PREPARING
+  // advance would actually be PAID→PREPARING (invalid transition — the
+  // exact class of bug the owner-PATCH guard exists to block).
+  let confirmed = false;
   try {
     await orderSvc.updateStatus(orderId, 'CONFIRMED', { actor, actorType });
+    confirmed = true;
   } catch (err) {
     log.error(
       { err: err?.message, orderId, actor, actorType },
@@ -217,7 +223,43 @@ async function applyOrderAcceptance(orderId, opts) {
     log.warn({ err: err?.message, orderId }, 'applyOrderAcceptance: activity log failed');
   }
 
-  return { applied: true, status: 'CONFIRMED' };
+  // ── 8. Auto-advance CONFIRMED → PREPARING ─────────────────────
+  // The owner dashboard treats CONFIRMED as a transient state — only
+  // the staff app keeps an explicit "Start prep" click. This advance
+  // used to happen in the frontend by re-calling PATCH /status, which
+  // ran as a separate request with no shared acceptance context. With
+  // the row Confirm button now hitting POST /accept (and the dedicated
+  // /accept handler removed of its own frontend-side auto-advance),
+  // doing the advance server-side here keeps the kitchen view in step.
+  //
+  // GATED on `confirmed`: if the CONFIRMED transition failed above the
+  // order is still in PAID, so an "advance to PREPARING" call here
+  // would actually be PAID→PREPARING — an invalid transition the state
+  // engine would reject. Skip silently in that case; the order is
+  // still at PAID and ops can replay /accept manually.
+  //
+  // WA-silent: orderSvc.updateStatus → transitionOrder writes
+  // order_state_log + emits order.updated to the bus. The only
+  // order.updated listener after the notificationListener removal is
+  // sseListener (socket emit only — no WhatsApp). The customer's
+  // "CONFIRMED" WA was already sent in step 6; no PREPARING customer
+  // message is sent anywhere in the stack, so no suppression flag is
+  // needed. Own try/catch — failing the advance must not mask the
+  // CONFIRMED success the caller is about to receive.
+  let advanced = false;
+  if (confirmed) {
+    try {
+      await orderSvc.updateStatus(orderId, 'PREPARING', { actor, actorType });
+      advanced = true;
+    } catch (err) {
+      log.warn(
+        { err: err?.message, orderId, actor, actorType },
+        'applyOrderAcceptance: CONFIRMED→PREPARING advance failed (order remains CONFIRMED; kitchen can advance manually)',
+      );
+    }
+  }
+
+  return { applied: true, status: advanced ? 'PREPARING' : 'CONFIRMED' };
 }
 
 module.exports = { applyOrderAcceptance };
