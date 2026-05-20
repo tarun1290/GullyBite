@@ -146,37 +146,32 @@ router.post('/callback', express.json({ limit: '64kb' }), (req, res) => {
           return;
         }
 
-        await orderStateEngine.transitionOrder(order._id, 'CONFIRMED', {
+        // All acceptance side-effects (acknowledged_at +
+        // petpooja_accepted_at + minimum_prep_time stamps,
+        // PAID→CONFIRMED transition, ORDER_DISPATCH enqueue,
+        // acceptance-timeout cancel, order_acknowledged socket,
+        // customer "CONFIRMED" WA, activity log) now run through the
+        // shared applyOrderAcceptance. Prior to this change the
+        // Petpooja path skipped ORDER_DISPATCH entirely — POS-accepted
+        // orders never reached Prorouting — and ran cancelTimeoutJob
+        // AFTER the state transition, leaving a money-losing race
+        // where the BullMQ worker could fault-fee a POS-accepted
+        // order. The CAS inside applyOrderAcceptance now stamps
+        // acknowledged_at first; paired with the worker's
+        // acknowledged_at guard (jobs/orderAcceptanceProcessor.js),
+        // that race is closed.
+        //
+        // actorType 'pp-pos' identifies the POS-callback origin in the
+        // order_state_log and activity_log (no closed enum on
+        // actorType, so future POS integrations get their own tags).
+        const { applyOrderAcceptance } = require('../services/orderAcceptance');
+        await applyOrderAcceptance(order._id, {
+          source: 'petpooja',
           actor: 'petpooja_pos',
-          note: 'Accepted via Petpooja POS callback',
+          actorType: 'pp-pos',
+          acknowledgedBy: null,
+          petpoojaExtras: { minimum_prep_time: body.minimum_prep_time || null },
         });
-
-        await col('orders').updateOne(
-          { _id: order._id },
-          { $set: {
-              petpooja_accepted_at: new Date(),
-              minimum_prep_time: body.minimum_prep_time || null,
-              updated_at: new Date(),
-            } },
-        );
-
-        // Cancel the in-flight acceptance-timeout BullMQ job so the
-        // worker doesn't fault the order at the timeout boundary now
-        // that the POS confirmed on the restaurant's behalf. Soft
-        // dependency — if cancelTimeoutJob isn't exported yet, the
-        // worker's idempotency guard (status !== 'PAID' → no-op) is
-        // the backstop.
-        try {
-          const processor = require('../jobs/orderAcceptanceProcessor');
-          if (typeof processor.cancelTimeoutJob === 'function') {
-            await processor.cancelTimeoutJob(order._id);
-          }
-        } catch (err) {
-          log.warn(
-            { err: err?.message, orderId: order._id },
-            'petpooja: cancelTimeoutJob failed (swallowed)',
-          );
-        }
 
         log.info({ orderId: order._id }, 'petpooja: order confirmed');
         return;

@@ -6135,11 +6135,6 @@ router.post('/orders/:orderId/accept', requireApproved, requireStaffPermission('
     if (order.restaurant_id !== req.restaurantId) {
       return res.status(404).json({ error: 'Order not found' });
     }
-    // Already acknowledged — idempotent success so a duplicate click
-    // (or two managers racing) doesn't surface an error.
-    if (order.acknowledged_at) {
-      return res.json({ success: true, alreadyAcknowledged: true, status: order.status });
-    }
     if (order.status !== 'PAID') {
       return res.status(409).json({ error: `Cannot accept order in status ${order.status}` });
     }
@@ -6153,77 +6148,33 @@ router.post('/orders/:orderId/accept', requireApproved, requireStaffPermission('
       }
     }
 
-    const now = new Date();
-    await col('orders').updateOne(
-      { _id: orderId, acknowledged_at: { $exists: false } },
-      { $set: { acknowledged_at: now, acknowledged_by: req.userId || null } }
-    );
-
-    await orderSvc.updateStatus(orderId, 'CONFIRMED', {
+    // All acceptance side-effects (acknowledged_at + acknowledged_by
+    // stamp, PAID→CONFIRMED transition, ORDER_DISPATCH enqueue,
+    // acceptance-timeout BullMQ cancel, order_acknowledged socket,
+    // customer "CONFIRMED" WA send, activity log) run inside the
+    // shared function. The atomic CAS inside it is the SINGLE
+    // idempotency check — no separate `if (order.acknowledged_at)`
+    // short-circuit here, since the pre-CAS findOne and the CAS would
+    // otherwise carry two different idempotency semantics that could
+    // drift. A duplicate click / two-manager race now collapses to
+    // alreadyAcknowledged exactly once at the DB layer.
+    const { applyOrderAcceptance } = require('../services/orderAcceptance');
+    const result = await applyOrderAcceptance(orderId, {
+      source: 'dashboard',
       actor: req.userId || 'restaurant',
       actorType: req.actor?.type === 'staff' ? 'staff' : 'restaurant',
+      acknowledgedBy: req.userId || null,
+      actorName: req.user?.name || req.user?.email || req.userRole || null,
     });
 
-    // Cancel the BullMQ acceptance-timeout job — restaurant acted in
-    // time. Best-effort: removeAcceptanceTimeoutJob is a no-op when the
-    // job is missing, so retries / stale ids never throw.
-    if (order.acceptance_timeout_job_id) {
-      try {
-        const { removeAcceptanceTimeoutJob } = require('../jobs/orderAcceptanceQueue');
-        await removeAcceptanceTimeoutJob(order.acceptance_timeout_job_id);
-      } catch (_) {}
+    if (!result.applied) {
+      // CAS no-op: order was already acknowledged (or moved off PAID by
+      // a racing transport / timeout worker). Preserve the prior
+      // response shape so the dashboard's accept-modal logic doesn't
+      // change behaviour.
+      return res.json({ success: true, alreadyAcknowledged: true, status: result.status });
     }
-
-    // Trigger Prorouting dispatch — moved here from the post-payment
-    // fan-out so dispatch only fires AFTER the restaurant accepts.
-    // Fire-and-forget: a Prorouting outage shouldn't block the
-    // accept-modal close. The post-payment ORDER_DISPATCH job that used
-    // to handle this is gated by a status guard (`!== 'CONFIRMED'`)
-    // for stale jobs in flight during deploy.
-    setImmediate(() => {
-      const { enqueue, JOB_TYPES } = require('../queue/postPaymentJobs');
-      enqueue(JOB_TYPES.ORDER_DISPATCH, { orderId: String(orderId), restaurantId: String(req.restaurantId) })
-        .catch((err) => req.log?.warn?.({ err: err?.message, orderId }, 'enqueue ORDER_DISPATCH failed (non-fatal)'));
-    });
-
-    ws.broadcastOrder(req.restaurantId, 'order_acknowledged', {
-      orderId, action: 'accept', newStatus: 'CONFIRMED',
-    });
-    // 'order_status_changed' is emitted by orderStateEngine via the
-    // state-transition path that fired during accept; no extra emit here.
-
-    // Customer confirmation — fire-and-forget so a WhatsApp hiccup
-    // doesn't fail the accept call.
-    try {
-      const fullOrder = await orderSvc.getOrderDetails(orderId);
-      if (fullOrder?.phone_number_id) {
-        orderNotify.notifyOrderStatus(
-          req.restaurantId,
-          fullOrder.phone_number_id, fullOrder.access_token, fullOrder.wa_phone,
-          'CONFIRMED',
-          {
-            _orderId: orderId,
-            order_number: fullOrder.order_number,
-            customer_name: fullOrder.customer_name,
-            total_rs: `₹${parseFloat(fullOrder.total_rs).toFixed(0)}`,
-            branch_name: fullOrder.branch_name,
-            restaurant_name: fullOrder.business_name,
-          }
-        ).catch(() => {});
-      }
-    } catch (_) {}
-
     res.json({ success: true, status: 'CONFIRMED' });
-
-    log({
-      actorType: 'restaurant', actorId: String(req.userId || req.restaurantId), actorName: req.user?.name || req.user?.email || req.userRole || null,
-      action: 'order.accepted', category: 'order',
-      description: `Order ${orderId} accepted (PAID → CONFIRMED)`,
-      restaurantId: req.restaurantId,
-      branchId: order.branch_id,
-      resourceType: 'order', resourceId: orderId,
-      severity: 'info',
-    });
   } catch (e) {
     req.log?.error?.({ err: e, orderId: req.params.orderId }, 'order accept failed');
     res.status(500).json({ success: false, message: "Internal server error" });

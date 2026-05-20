@@ -34,19 +34,30 @@ async function processAcceptanceTimeout(job) {
 
   const order = await col('orders').findOne(
     { _id: orderId },
-    { projection: { _id: 1, status: 1, order_number: 1, restaurant_id: 1 } },
+    { projection: { _id: 1, status: 1, acknowledged_at: 1, order_number: 1, restaurant_id: 1 } },
   );
   if (!order) {
     log.warn({ orderId }, 'acceptance-timeout: order not found — likely stale job');
     return { skipped: true, reason: 'order not found' };
   }
 
-  // Idempotency guard — the only state that triggers fault handling is
-  // PAID (restaurant never acted). Anything else means accept/decline/
-  // cancel already happened and the job is stale.
-  if (order.status !== 'PAID') {
-    log.info({ orderId, status: order.status }, 'acceptance-timeout: order already past PAID — no-op');
-    return { skipped: true, reason: `status=${order.status}` };
+  // Idempotency guard — fault handling fires only for orders still
+  // in PAID with no acknowledged_at stamp. status !== 'PAID' means
+  // accept/decline/cancel/refund already landed and the job is stale.
+  // The acknowledged_at check closes the race with the acceptance
+  // paths (services/orderAcceptance.applyOrderAcceptance): the CAS
+  // there stamps acknowledged_at BEFORE the state transition, so an
+  // in-flight acceptance is visible to this worker even while the doc
+  // still reads PAID. Without this second condition the worker could
+  // fire between the CAS and the transition, book a RESTAURANT_TIMEOUT
+  // fault-fee, and refund a customer on an order the restaurant
+  // actually accepted (the documented Petpooja race).
+  if (order.status !== 'PAID' || order.acknowledged_at) {
+    log.info(
+      { orderId, status: order.status, hasAck: !!order.acknowledged_at },
+      'acceptance-timeout: order already accepted or past PAID — no-op',
+    );
+    return { skipped: true, reason: order.acknowledged_at ? 'acknowledged' : `status=${order.status}` };
   }
 
   log.warn({ orderId, orderNumber: order.order_number, restaurantId: order.restaurant_id },
