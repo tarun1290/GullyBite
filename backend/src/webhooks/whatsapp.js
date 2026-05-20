@@ -797,6 +797,67 @@ const handleMessage = async (msg, senderIdentifiers, senderName, waAccount) => {
     conv.session_data = { ...(conv.session_data || {}), bsuid: sessionBsuid };
   }
 
+  // CSW stamp. utils/csw.js reads customers.last_inbound_at to answer
+  // "is this customer inside the 24h Meta customer service window?".
+  // This is the one place every inbound message type passes through
+  // AFTER customer resolution and BEFORE the per-type dispatch (text /
+  // interactive / order / location / contacts / fallback), so stamping
+  // here is the only point that guarantees full coverage. The prior
+  // proxy (customer_messages.direction:'inbound') was only written by
+  // captureCustomerMessage in the dead-letter branches, so active
+  // ordering customers showed as "outside CSW" and post-payment status
+  // updates were silently suppressed.
+  // Best-effort: a write failure must NOT block message processing.
+  try {
+    await col('customers').updateOne(
+      { _id: customer.id },
+      { $set: { last_inbound_at: new Date() } },
+    );
+  } catch (err) {
+    log.warn({ err: err?.message, customerId: customer.id }, 'CSW stamp (last_inbound_at) failed — continuing');
+  }
+
+  // Dashboard-analytics conversation stamp. Mirror-image of the CSW
+  // gap above: until now, conversations.last_message_at was written
+  // ONLY from captureCustomerMessage's dead-letter branch (whatsapp.js
+  // ~4724), so the dashboard "active conversations (24h)" /
+  // "active (30d)" KPIs at routes/restaurant.js:7337/7341 severely
+  // under-counted real ordering traffic. Stamping here closes that
+  // gap; the existing write below stays as-is (harmless redundant
+  // write on the dead-letter path — same Date value).
+  //
+  // Match shape is intentionally `{ restaurant_id, customer_phone }`
+  // (NOT conv.id) — that's the analytics-doc convention this field
+  // lives on, distinct from the session/state-machine conv doc
+  // returned by orderSvc.getOrCreateConversation. Upsert mirrors the
+  // existing write so a first-message customer still gets a row.
+  //
+  // Independent try/catch from the CSW stamp above so one stamp
+  // failing cannot suppress the other (per spec).
+  try {
+    if (waAccount?.restaurant_id && customer.wa_phone) {
+      await col('conversations').updateOne(
+        { restaurant_id: waAccount.restaurant_id, customer_phone: customer.wa_phone },
+        {
+          $set: {
+            last_message_at: new Date(),
+            last_message_direction: 'inbound',
+            category: 'service',
+          },
+          $setOnInsert: {
+            _id: newId(),
+            restaurant_id: waAccount.restaurant_id,
+            customer_phone: customer.wa_phone,
+            conversation_started_at: new Date(),
+          },
+        },
+        { upsert: true },
+      );
+    }
+  } catch (err) {
+    log.warn({ err: err?.message, restaurantId: waAccount?.restaurant_id }, 'last_message_at stamp failed — continuing');
+  }
+
   // [BSUID] Handle contacts message type (phone number sharing flow — Step 13)
   if (msg.type === 'contacts' && conv.state === 'AWAITING_PHONE_FOR_PAYMENT') {
     await handlePhoneShared(msg, customer, conv, waAccount);

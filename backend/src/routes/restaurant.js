@@ -5993,6 +5993,35 @@ router.patch('/orders/:orderId/status', requireApproved, requireStaffPermission(
       return res.status(400).json({ error: `Your role allows: ${allowed.join(', ')}` });
     }
 
+    // FROM-state guard for PAID → CONFIRMED. /accept is the canonical
+    // acceptance path — it sets acknowledged_at, enqueues
+    // ORDER_DISPATCH (Prorouting), cancels the BullMQ acceptance-
+    // timeout job, fires the customer "order confirmed" WhatsApp send,
+    // and broadcasts order_acknowledged. The generic PATCH /status
+    // carries none of those side-effects, so accepting a PAID order
+    // through here used to silently skip dispatch (orders advanced to
+    // PACKED with no 3PL task ever created). Mirror staff.js's
+    // STAFF_ALLOWED_FROM pattern: reject this one transition and
+    // direct callers to POST /accept. Other forward transitions
+    // (CONFIRMED→PREPARING, PREPARING→PACKED, etc.) are this
+    // endpoint's legitimate purpose and continue unrestricted.
+    //
+    // Re-read the order doc here (the requireBranchAccess decorator
+    // only projects branch_id, not status) so the comparison uses the
+    // ACTUAL current status, not the requested target.
+    if (status === 'CONFIRMED') {
+      const current = await col('orders').findOne(
+        { _id: req.params.orderId },
+        { projection: { status: 1 } },
+      );
+      if (current?.status === 'PAID') {
+        return res.status(409).json({
+          error: 'Use POST /api/restaurant/orders/:id/accept to accept a paid order — PATCH /status does not run the acceptance side-effects (dispatch, timeout cancel, customer notification).',
+          code: 'USE_ACCEPT_ENDPOINT',
+        });
+      }
+    }
+
     const order = await orderSvc.updateStatus(req.params.orderId, status);
 
     // 'order_status_changed' is emitted by orderStateEngine.transitionOrder

@@ -82,6 +82,7 @@ async function dispatchDelivery(orderId) {
     lat: parseFloat(branch.latitude),
     lng: parseFloat(branch.longitude),
     address: branch.address || '',
+    city: branch.city || '',
     contactName: branch.name,
     contactPhone: branch.manager_phone || restaurant?.phone || '',
   };
@@ -90,6 +91,7 @@ async function dispatchDelivery(orderId) {
     lat: parseFloat(order.delivery_lat),
     lng: parseFloat(order.delivery_lng),
     address: order.delivery_address || '',
+    city: order.structured_address?.city || '',
     contactName: customer?.name || 'Customer',
     // [BSUID] 3PL requires phone — use wa_phone if available, otherwise empty (manager handles manually)
     contactPhone: customer?.wa_phone || '',

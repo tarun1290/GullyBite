@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import OrderCard from '../../../components/restaurant/OrderCard';
 import OrderDetailModal from '../../../components/restaurant/OrderDetailModal';
-import { getOrders, updateOrderStatus, declineOrder, getStaffedBranches } from '../../../api/restaurant';
+import { getOrders, updateOrderStatus, acceptOrder, declineOrder, getStaffedBranches } from '../../../api/restaurant';
 import { useToast } from '../../../components/Toast';
 import { useNewOrderSound } from '../../../hooks/useNewOrderSound';
 import { useSocketContext } from '../../../components/shared/SocketProvider';
@@ -147,12 +147,27 @@ export default function OrdersPage() {
     async (orderId: string, nextStatus: string) => {
       setRowBusy((b) => ({ ...b, [orderId]: true }));
       try {
-        await updateOrderStatus(orderId, nextStatus);
+        // PAID → CONFIRMED MUST go through the dedicated /accept route,
+        // not the generic PATCH /status. /accept is the only path that
+        // sets acknowledged_at, enqueues ORDER_DISPATCH (Prorouting),
+        // cancels the BullMQ acceptance-timeout job, and fires the
+        // customer "order confirmed" WhatsApp send. Hitting PATCH
+        // /status with 'CONFIRMED' moved the order forward but skipped
+        // every one of those side-effects — orders accepted from this
+        // row never dispatched to Prorouting. Mirror what
+        // NewOrderPopup.handleConfirm does: acceptOrder, then the
+        // PREPARING auto-advance via PATCH /status.
+        //
+        // Forward status flips (CONFIRMED→PREPARING, PREPARING→PACKED,
+        // etc.) legitimately stay on PATCH /status — they're status
+        // updates with no acceptance side-effects to carry.
+        if (nextStatus === 'CONFIRMED') {
+          await acceptOrder(orderId);
+        } else {
+          await updateOrderStatus(orderId, nextStatus);
+        }
         // Silence the alarm the moment the server confirms the
-        // transition. Covers the accept path (PAID → CONFIRMED →
-        // PREPARING; the auto-advance below) and any other status
-        // change that flows through here. No-op when the order
-        // wasn't ringing.
+        // transition. No-op when the order wasn't ringing.
         markOrderActioned(orderId);
         // Auto-advance CONFIRMED → PREPARING. The owner dashboard
         // treats CONFIRMED as transient — the staff app keeps an

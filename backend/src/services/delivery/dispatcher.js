@@ -36,6 +36,7 @@ async function getBestQuote(branchId, deliveryLat, deliveryLng, orderDetails = {
     lat: parseFloat(branch.latitude),
     lng: parseFloat(branch.longitude),
     address: branch.address || '',
+    city: branch.city || '',
     contactName: branch.name,
     contactPhone: branch.manager_phone || restaurant?.phone || '',
   };
@@ -43,6 +44,7 @@ async function getBestQuote(branchId, deliveryLat, deliveryLng, orderDetails = {
     lat: parseFloat(deliveryLat),
     lng: parseFloat(deliveryLng),
     address: orderDetails.deliveryAddress || '',
+    city: orderDetails.deliveryCity || orderDetails.city || '',
     contactName: orderDetails.customerName || 'Customer',
     contactPhone: orderDetails.customerPhone || '',
   };
