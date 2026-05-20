@@ -129,6 +129,13 @@ async function main() {
         payment_id: paymentId,
         payment_method: 'razorpay_test_simulated',
         updated_at: now,
+        // Override creation time on the recycled order. routes/restaurant.js
+        // GET /orders sorts by created_at desc; without this the order
+        // keeps its original (potentially old) creation date and buries
+        // itself outside the visible page / date window. Stamping it to
+        // now makes the test order surface at the top like a genuine
+        // first-time PAID order.
+        created_at: now,
         // notified_at is what the dashboard's pending-order poll keys on
         // to distinguish never-shown vs already-shown orders. Recycling
         // an existing order without resetting this leaves the new-order
