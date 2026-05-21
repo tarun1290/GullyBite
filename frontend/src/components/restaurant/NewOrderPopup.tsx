@@ -27,7 +27,6 @@ import {
   getOrderById,
   getOrders,
   getStaffedBranches,
-  updateOrderStatus,
 } from '../../api/restaurant';
 import { useNewOrderSound } from '../../hooks/useNewOrderSound';
 import { useSocketContext } from '../shared/SocketProvider';
@@ -247,23 +246,25 @@ export default function NewOrderPopup() {
     if (!currentId || busy) return;
     setBusy('confirm');
     try {
-      await acceptOrder(currentId);
-      // Auto-advance CONFIRMED → PREPARING. Owner dashboard treats
-      // CONFIRMED as a transient state; the kitchen view (staff app)
-      // is the only surface that needs an explicit "Start prep" click.
-      // Fire-and-forget: if this second call fails, the order is
-      // already accepted (state engine has flipped to CONFIRMED),
-      // so we don't block the popup close or surface an error toast.
-      // A subsequent settlement-side reconciliation or manual nudge
-      // can pick up any orders that got stuck in CONFIRMED.
-      try {
-        await updateOrderStatus(currentId, 'PREPARING');
-      } catch (err) {
-        console.warn('[NewOrderPopup] auto-advance to PREPARING failed:', err);
-      }
+      // /accept now returns one of three shapes (see api/restaurant.ts):
+      //   • { alreadyAcknowledged: true, status } — idempotent (200)
+      //   • { confirmed: true, status: 'PREPARING'|'CONFIRMED' } — genuine accept (200)
+      //   • HTTP 409 — transition failed (axios throws into catch)
+      // The CONFIRMED→PREPARING auto-advance now runs server-side
+      // inside applyOrderAcceptance (services/orderAcceptance.js step
+      // 8), so the previous frontend follow-up
+      // `updateOrderStatus(currentId, 'PREPARING')` was redundant on
+      // success and harmful on a falsely-reported success (it produced
+      // the "PAID → PREPARING not allowed" log on every CONFIRMED-
+      // transition failure). Removed.
+      const res = await acceptOrder(currentId);
       markOrderActioned(currentId);
       removeFromQueue(currentId);
-      showToast('Order confirmed ✓', 'success');
+      if (res?.alreadyAcknowledged) {
+        showToast('Order already accepted', 'info');
+      } else {
+        showToast('Order confirmed ✓', 'success');
+      }
     } catch (err: unknown) {
       const e = err as { response?: { data?: { error?: string } }; message?: string };
       showToast(e?.response?.data?.error || e?.message || 'Could not confirm order', 'error');

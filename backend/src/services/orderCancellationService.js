@@ -127,6 +127,66 @@ async function handleRestaurantFault(orderId, reason) {
     return { skipped: true, reason: `status=${order.status}` };
   }
 
+  // ─── RACE-CLOSE (restaurant_timeout only) ────────────────────
+  // Final-moment re-read placed RIGHT BEFORE the refund call to close
+  // the money-race window with /accept:
+  //
+  //   • Worker's first-line guard (orderAcceptanceProcessor.js:55)
+  //     reads acknowledged_at when the BullMQ job fires.
+  //   • This function's status guard above re-reads when invoked.
+  //   • THEN the prior layout awaited issueRefund (hundreds of ms)
+  //     before transitioning — a /accept CAS landing in that window
+  //     would refund + fault-fee + flip the row on an accepted order.
+  //
+  // The re-check below sits as close to the refund as possible, so a
+  // mid-flight /accept cancels the entire fault chain (no refund, no
+  // fault-fee, no transition) — the accept wins cleanly.
+  //
+  // Scope: ONLY the restaurant_timeout path. The /decline route
+  // (reason==='rejected_by_restaurant') and Petpooja CANCELLED
+  // callback are EXPLICIT rejections; acknowledged_at being set
+  // there is NOT a reason to abort — the restaurant/POS is
+  // deliberately rejecting after acknowledgement.
+  //
+  // The remaining race window is microseconds between this read and
+  // the issueRefund call below — narrow enough to be effectively
+  // closed in practice. A fully race-free design would need a
+  // coordinated atomic claim CAS on both sides (timeout-marker
+  // field added to the /accept CAS filter) — out of scope here.
+  if (reason === 'restaurant_timeout') {
+    let fresh;
+    try {
+      fresh = await col('orders').findOne(
+        { _id: orderId },
+        { projection: { acknowledged_at: 1, status: 1 } },
+      );
+    } catch (readErr) {
+      // Read-failure: fail-CLOSED on the timeout path — better to
+      // skip the fault than risk refunding an accepted order on
+      // stale assumptions. The BullMQ job's single-attempt config
+      // means we won't auto-retry; ops can replay manually.
+      log.warn({ err: readErr?.message, orderId },
+        'handleRestaurantFault: pre-refund re-read failed — aborting timeout fault (fail-closed)');
+      return { skipped: true, reason: 'pre_refund_read_failed' };
+    }
+    if (fresh?.acknowledged_at) {
+      log.warn(
+        { orderId, status: fresh.status, acknowledged_at: fresh.acknowledged_at },
+        'handleRestaurantFault: restaurant_timeout aborted — concurrent /accept landed during timeout dispatch (acknowledged_at present)',
+      );
+      return { skipped: true, reason: 'concurrent_accept_won' };
+    }
+    if (fresh?.status !== 'PAID') {
+      // Status moved off PAID since the line ~124 guard ran (customer
+      // cancel via WA, manual /decline winning the race, etc.).
+      log.warn(
+        { orderId, status: fresh?.status },
+        'handleRestaurantFault: restaurant_timeout aborted — status moved off PAID concurrently',
+      );
+      return { skipped: true, reason: `status=${fresh?.status}` };
+    }
+  }
+
   const orderTotalRs = Number(order.total_rs) || 0;
   const razorpayFeeRs = calculateRazorpayFeeRs(orderTotalRs);
   const reasonText = REASON_TEXT[reason] || 'Order cancelled';

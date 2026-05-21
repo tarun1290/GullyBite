@@ -6194,18 +6194,35 @@ router.post('/orders/:orderId/accept', requireApproved, requireStaffPermission('
       actorName: req.user?.name || req.user?.email || req.userRole || null,
     });
 
-    if (!result.applied) {
-      // CAS no-op: order was already acknowledged (or moved off PAID by
-      // a racing transport / timeout worker). Preserve the prior
-      // response shape so the dashboard's accept-modal logic doesn't
-      // change behaviour.
+    // Three return shapes the route must distinguish (see
+    // services/orderAcceptance.js header):
+    //   1) alreadyAcknowledged: CAS no-op — order was already accepted
+    //      (idempotent dashboard double-click, Petpooja-then-dashboard
+    //      race, etc.). Genuine 200 success.
+    //   2) applied:false, confirmed:false: CAS stamped but the
+    //      PAID→CONFIRMED transition was rejected by the state engine
+    //      (a concurrent writer flipped status off PAID — most likely
+    //      the acceptance-timeout worker or a customer cancel).
+    //      acknowledged_at has been rolled back; timeout job is still
+    //      armed. 409 so the frontend does NOT auto-advance to
+    //      PREPARING on a still-PAID (or already-faulted) order.
+    //   3) applied:true, confirmed:true: genuine acceptance.
+    if (result.alreadyAcknowledged) {
       return res.json({ success: true, alreadyAcknowledged: true, status: result.status });
+    }
+    if (!result.applied || !result.confirmed) {
+      return res.status(409).json({
+        success: false,
+        error: 'Order could not be accepted — state changed before transition completed. Please refresh and check the order status.',
+        status: result.status,
+        reason: result.reason || null,
+      });
     }
     // result.status is 'PREPARING' when the auto-advance ran (the
     // normal path) and 'CONFIRMED' when the CONFIRMED→PREPARING
     // advance failed and the order is sitting at CONFIRMED. The
     // dashboard reads this to refresh its row's status badge.
-    res.json({ success: true, status: result.status });
+    res.json({ success: true, confirmed: true, status: result.status });
   } catch (e) {
     req.log?.error?.({ err: e, orderId: req.params.orderId }, 'order accept failed');
     res.status(500).json({ success: false, message: "Internal server error" });

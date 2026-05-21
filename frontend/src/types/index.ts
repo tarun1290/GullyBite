@@ -339,7 +339,9 @@ export interface ListingAnalytics {
 
 export type FoodType = 'veg' | 'non_veg' | 'egg' | 'vegan';
 
-// Mirrors STATUS_BADGE in OrderCard.jsx plus PAID_OUT (settlements).
+// Mirrors backend ORDER_STATES (core/orderStateEngine.js) plus PAID_OUT
+// (settlements) and the legacy 'PENDING' (older docs predating the
+// PENDING_PAYMENT rename — kept until those rows fully drain).
 export type OrderStatus =
   | 'PENDING'
   | 'PENDING_PAYMENT'
@@ -353,6 +355,11 @@ export type OrderStatus =
   | 'DISPATCHED'
   | 'DELIVERED'
   | 'CANCELLED'
+  | 'REJECTED_BY_RESTAURANT'
+  | 'RESTAURANT_TIMEOUT'
+  | 'NO_DELIVERY_AVAILABLE'
+  | 'RTO_IN_PROGRESS'
+  | 'RTO_COMPLETE'
   | 'PAID_OUT';
 
 // ── Restaurant ──────────────────────────────────────────────────────

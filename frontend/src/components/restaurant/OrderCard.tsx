@@ -162,11 +162,19 @@ export default function OrderCard({
     setErrorMsg(null);
     setActionInFlight('accept');
     try {
-      await acceptOrder(order.id);
-      setOverrideStatus('CONFIRMED');
-      // Fire-and-forget — parent uses this to silence the new-order
-      // alarm + refetch silently. Awaited so a thrown parent handler
-      // surfaces as an inline error rather than getting lost.
+      // /accept returns 200 with { confirmed, alreadyAcknowledged?, status }
+      // on the happy + idempotent paths, or HTTP 409 on a state-guard
+      // race (axios throws → caught below). The returned `status` is
+      // the actual post-acceptance status ('PREPARING' on the normal
+      // server-side auto-advance, 'CONFIRMED' if the auto-advance
+      // failed). Trust it rather than hard-coding so the badge reflects
+      // the real state before the parent's refetch lands.
+      const res = await acceptOrder(order.id);
+      const reportedStatus = (res?.status as OrderStatus | undefined) || 'CONFIRMED';
+      setOverrideStatus(reportedStatus);
+      // Parent silences the new-order alarm + refetches silently.
+      // Awaited so a thrown parent handler surfaces as an inline error
+      // rather than getting lost.
       await onAccepted?.(order.id);
     } catch (e: unknown) {
       setErrorMsg(extractErrorMessage(e, 'Accept failed'));

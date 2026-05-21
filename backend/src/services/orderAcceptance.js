@@ -107,12 +107,111 @@ async function applyOrderAcceptance(orderId, opts) {
     return { applied: false, alreadyAcknowledged: true, status: currentStatus };
   }
 
-  // ── 2. Cancel acceptance-timeout BullMQ job ───────────────────
-  // BEFORE the state transition. Best-effort: removeAcceptanceTimeoutJob
-  // is idempotent against a missing/already-removed job, and the worker
-  // (with its acknowledged_at guard added in jobs/orderAcceptanceProcessor.js)
-  // backstops if this fails. Own try/catch so a Redis blip can't
-  // poison subsequent side-effects.
+  // ── 2. State transition PAID → CONFIRMED ──────────────────────
+  // Runs BEFORE the side-effects (timeout-job cancel, dispatch enqueue,
+  // socket broadcast, customer WA) so a failed transition aborts
+  // cleanly without telling the customer "confirmed", cancelling the
+  // safety-net timeout job, or queueing a dispatch on a still-PAID
+  // order. Owns the order_status_changed bus/socket fan-out via
+  // orderStateEngine; actor/actorType drive the order_state_log entry.
+  //
+  // Failure modes (see Part B investigation in the PR thread):
+  // The state engine's findOneAndUpdate state-guard
+  // ({ _id, status: 'PAID' }) rejects when a concurrent transition
+  // already flipped the row off PAID. The most likely concurrent writer
+  // is the acceptance-timeout worker — its acknowledged_at guard at
+  // jobs/orderAcceptanceProcessor.js:55 narrows but does NOT close the
+  // race: the worker reads `order` BEFORE handleRestaurantFault
+  // commits, and our CAS can stamp acknowledged_at in that window. The
+  // /decline route and customer-cancel paths can also race on PAID.
+  let confirmed = false;
+  let transitionErr = null;
+  try {
+    await orderSvc.updateStatus(orderId, 'CONFIRMED', { actor, actorType });
+    confirmed = true;
+  } catch (err) {
+    transitionErr = err;
+    // Log the actual cause + the from/to state so ops can see whether
+    // this is a state-guard race (engine "state changed concurrently"
+    // message) or a different failure (Mongo blip, etc.). Previously
+    // this was logged blind without err.message.
+    log.error(
+      {
+        err: err?.message,
+        errStack: err?.stack,
+        orderId,
+        from: 'PAID',
+        to: 'CONFIRMED',
+        actor,
+        actorType,
+      },
+      'applyOrderAcceptance: PAID→CONFIRMED transition failed',
+    );
+  }
+
+  if (!confirmed) {
+    // ── ROLLBACK ──────────────────────────────────────────────
+    // The CAS at step 1 stamped acknowledged_at (+ acknowledged_by, +
+    // petpooja_accepted_at/minimum_prep_time when source==='petpooja').
+    // Without rollback the row would be acknowledged but still PAID,
+    // and the acceptance-timeout worker's `acknowledged_at` guard would
+    // skip the fault path — the order would be permanently stuck (paid
+    // customer, no kitchen receipt, no auto-refund). Rolling back
+    // restores the pre-CAS shape so:
+    //   • the timeout BullMQ job (NEVER cancelled here because the
+    //     cancel was moved below the transition) still fires at its
+    //     scheduled time and faults the order via RESTAURANT_TIMEOUT,
+    //   • a retry via POST /accept can re-stamp the CAS cleanly.
+    // $unset is safe even if a concurrent action has since flipped
+    // status — we only remove fields we wrote.
+    const $unset = { acknowledged_at: '', acknowledged_by: '' };
+    if (source === 'petpooja') {
+      $unset.petpooja_accepted_at = '';
+      $unset.minimum_prep_time = '';
+    }
+    try {
+      await col('orders').updateOne(
+        { _id: orderId },
+        { $unset, $set: { updated_at: new Date() } },
+      );
+    } catch (rollbackErr) {
+      log.error(
+        { err: rollbackErr?.message, orderId },
+        'applyOrderAcceptance: acknowledged_at rollback failed — order may be stuck (manual intervention required)',
+      );
+    }
+
+    // Read the actual current status so the caller gets the truth.
+    // Likely values: RESTAURANT_TIMEOUT / REJECTED_BY_RESTAURANT /
+    // CANCELLED (concurrent writer won) or still PAID (transient blip).
+    let actualStatus = 'PAID';
+    try {
+      const current = await col('orders').findOne(
+        { _id: orderId },
+        { projection: { status: 1 } },
+      );
+      actualStatus = current?.status || 'PAID';
+    } catch (_) { /* fall back to PAID; the truthful value is best-effort */ }
+
+    log.warn(
+      { orderId, actualStatus, transitionErr: transitionErr?.message || null },
+      'applyOrderAcceptance: returning confirmed=false; side-effects skipped, timeout job left armed',
+    );
+    return {
+      applied: false,
+      confirmed: false,
+      status: actualStatus,
+      reason: transitionErr?.message || 'transition_failed',
+    };
+  }
+
+  // ── 3. Cancel acceptance-timeout BullMQ job ───────────────────
+  // AFTER the transition succeeded — the order is now CONFIRMED, so
+  // the safety net is no longer needed. Moved below the transition
+  // so a failed transition leaves the timeout armed (rollback path
+  // above relies on this). Best-effort: removeAcceptanceTimeoutJob is
+  // idempotent against a missing/already-removed job; the worker's
+  // own status guard backstops if Redis hiccups here.
   if (order.acceptance_timeout_job_id) {
     try {
       const { removeAcceptanceTimeoutJob } = require('../jobs/orderAcceptanceQueue');
@@ -123,24 +222,6 @@ async function applyOrderAcceptance(orderId, opts) {
         'applyOrderAcceptance: cancel timeout job failed (continuing)',
       );
     }
-  }
-
-  // ── 3. State transition PAID → CONFIRMED ──────────────────────
-  // Owns the order_status_changed bus/socket fan-out via
-  // orderStateEngine. actor/actorType drive the order_state_log entry.
-  // `confirmed` flag gates the PREPARING auto-advance below: if this
-  // call threw, the order is still PAID and a CONFIRMED→PREPARING
-  // advance would actually be PAID→PREPARING (invalid transition — the
-  // exact class of bug the owner-PATCH guard exists to block).
-  let confirmed = false;
-  try {
-    await orderSvc.updateStatus(orderId, 'CONFIRMED', { actor, actorType });
-    confirmed = true;
-  } catch (err) {
-    log.error(
-      { err: err?.message, orderId, actor, actorType },
-      'applyOrderAcceptance: PAID→CONFIRMED transition failed (continuing with downstream side-effects)',
-    );
   }
 
   // ── 4. Enqueue ORDER_DISPATCH ─────────────────────────────────
@@ -232,12 +313,6 @@ async function applyOrderAcceptance(orderId, opts) {
   // /accept handler removed of its own frontend-side auto-advance),
   // doing the advance server-side here keeps the kitchen view in step.
   //
-  // GATED on `confirmed`: if the CONFIRMED transition failed above the
-  // order is still in PAID, so an "advance to PREPARING" call here
-  // would actually be PAID→PREPARING — an invalid transition the state
-  // engine would reject. Skip silently in that case; the order is
-  // still at PAID and ops can replay /accept manually.
-  //
   // WA-silent: orderSvc.updateStatus → transitionOrder writes
   // order_state_log + emits order.updated to the bus. The only
   // order.updated listener after the notificationListener removal is
@@ -245,21 +320,29 @@ async function applyOrderAcceptance(orderId, opts) {
   // "CONFIRMED" WA was already sent in step 6; no PREPARING customer
   // message is sent anywhere in the stack, so no suppression flag is
   // needed. Own try/catch — failing the advance must not mask the
-  // CONFIRMED success the caller is about to receive.
+  // CONFIRMED success the caller is about to receive (returns
+  // status:'CONFIRMED' so the caller knows the kitchen advance didn't
+  // land and can decide whether to retry).
+  //
+  // No `confirmed` gate needed here: the !confirmed branch above
+  // already returned, so this point is only reached on a successful
+  // PAID→CONFIRMED.
   let advanced = false;
-  if (confirmed) {
-    try {
-      await orderSvc.updateStatus(orderId, 'PREPARING', { actor, actorType });
-      advanced = true;
-    } catch (err) {
-      log.warn(
-        { err: err?.message, orderId, actor, actorType },
-        'applyOrderAcceptance: CONFIRMED→PREPARING advance failed (order remains CONFIRMED; kitchen can advance manually)',
-      );
-    }
+  try {
+    await orderSvc.updateStatus(orderId, 'PREPARING', { actor, actorType });
+    advanced = true;
+  } catch (err) {
+    log.warn(
+      { err: err?.message, orderId, actor, actorType },
+      'applyOrderAcceptance: CONFIRMED→PREPARING advance failed (order remains CONFIRMED; kitchen can advance manually)',
+    );
   }
 
-  return { applied: true, status: advanced ? 'PREPARING' : 'CONFIRMED' };
+  return {
+    applied: true,
+    confirmed: true,
+    status: advanced ? 'PREPARING' : 'CONFIRMED',
+  };
 }
 
 module.exports = { applyOrderAcceptance };

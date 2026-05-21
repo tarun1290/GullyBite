@@ -241,53 +241,18 @@ async function applyProroutingState(order, statusRaw, eventBody = {}) {
     );
     await _emitDeliveryUpdate(order._id);
 
-    // Late-webhook guard. If the order has already moved past the
-    // dispatch lifecycle (DELIVERED, terminal cancellations, RTO),
-    // skip the transition attempt + customer notification entirely.
-    // Returning early here avoids a noisy "transition not allowed"
-    // warn on every duplicate / out-of-order Prorouting callback.
-    if (POST_DISPATCH_TERMINAL.has(order.status)) {
-      log.info({ orderId: order._id, orderStatus: order.status },
-        `late webhook ignored — order already in ${order.status}`);
-      return { previousStatus, currentStatus: statusRaw, updated: true, late: true };
-    }
-    // Customer notification gates on updateStatus success. The order's
-    // state machine rejects DISPATCHED transitions from terminal states
-    // (EXPIRED, CANCELLED, DELIVERED, RTO_*) by throwing; the late-
-    // webhook guard above handles the common cases — this catch covers
-    // anything else (e.g. PAID without CONFIRMED) where a misleading
-    // "rider on the way" message would otherwise go out.
-    let dispatchedOk = false;
-    try {
-      await orderSvc.updateStatus(order._id, 'DISPATCHED');
-      dispatchedOk = true;
-    } catch (e) {
-      log.warn({ err: e?.message, orderId: order._id, orderStatus: order.status }, 'updateStatus DISPATCHED failed — skipping customer notification');
-    }
-    if (dispatchedOk && ctx) {
-      const riderName = eventBody.rider_name || eventBody.agent_name || eventBody.driver_name || null;
-      const riderPhone = eventBody.rider_phone || eventBody.agent_phone || eventBody.driver_phone || null;
-      const riderLine = riderName || riderPhone
-        ? `Your rider${riderName ? ` ${riderName}` : ''}${riderPhone ? ` (${riderPhone})` : ''} is on the way.`
-        : 'A delivery rider has been assigned to your order.';
-      // When Prorouting supplies a tracking_url, surface it as a
-      // native CTA button rather than an inline link — the in-app
-      // browser launch is more tap-target-friendly and the message
-      // body stays uncluttered. Fall back to the plain-text send
-      // when the LSP omits tracking_url (some 3PLs at the
-      // pre-assignment cusp).
-      if (trackingUrl) {
-        await wa.sendCtaUrl(ctx.pid, ctx.token, ctx.to, {
-          body: `🛵 ${riderLine}\n\nOrder #${order.order_number} will reach you shortly.`,
-          buttonText: 'Track Order',
-          url: trackingUrl,
-        }).catch((e) => log.warn({ err: e?.message }, 'agent-assigned sendCtaUrl failed'));
-      } else {
-        await wa.sendText(ctx.pid, ctx.token, ctx.to,
-          `🛵 ${riderLine}\n\nOrder #${order.order_number} will reach you shortly.`
-        ).catch((e) => log.warn({ err: e?.message }, 'agent-assigned sendText failed'));
-      }
-    }
+    // NO order-status transition on agent-assigned. The rider has only
+    // been allocated — they're driving to the restaurant; the food may
+    // not even be packed yet. DISPATCHED + the "on the way" customer
+    // message now fire on the picked_up event below, where they
+    // semantically belong (physical handover = food has actually left).
+    // This branch is purely a logistics/dashboard update.
+    //
+    // (Removed: the prior updateStatus(DISPATCHED) + "🛵 rider on the
+    //  way" CTA — those wrongly fired the moment a rider was assigned,
+    //  triggering "PREPARING → DISPATCHED not allowed" engine rejects
+    //  in production and telling customers their food was on the way
+    //  while the kitchen was still cooking.)
     return { previousStatus, currentStatus: statusRaw, updated: true };
   }
 
@@ -313,6 +278,17 @@ async function applyProroutingState(order, statusRaw, eventBody = {}) {
       { $set: { prorouting_state: 'AT_PICKUP', prorouting_at_pickup_at: atPickupAt, updated_at: new Date() } }
     );
     await _emitDeliveryUpdate(order._id);
+    // Ops visibility: rider is at the restaurant but the kitchen hasn't
+    // marked PACKED. Not an error (the kitchen often takes a few more
+    // minutes after the rider arrives) but worth surfacing so ops can
+    // investigate chronic kitchen-pack delays per branch. No transition
+    // and no customer message — the picked_up event below owns both.
+    if (order.status === 'PREPARING' || order.status === 'CONFIRMED') {
+      log.warn(
+        { orderId: order._id, orderStatus: order.status },
+        'at-pickup: rider arrived but kitchen has not marked PACKED',
+      );
+    }
     return { previousStatus, currentStatus: statusRaw, updated: true };
   }
 
@@ -338,17 +314,75 @@ async function applyProroutingState(order, statusRaw, eventBody = {}) {
         `late webhook ignored — order already in ${order.status}`);
       return { previousStatus, currentStatus: statusRaw, updated: true, late: true };
     }
-    // Self-heal: if the order missed the agent-assigned transition (rare in
-    // production, common on staging where createasync fails), pulling
-    // ourselves into DISPATCHED first lets the delivered branch close out
-    // cleanly. Idempotent — if already DISPATCHED or further, this no-ops.
-    if (order.status === 'PACKED') {
-      try {
-        await orderSvc.updateStatus(order._id, 'DISPATCHED');
-        log.info({ orderId: order._id }, 'picked-up: self-healed PACKED → DISPATCHED');
-      } catch (e) {
-        log.warn({ err: e?.message, orderId: order._id, orderStatus: order.status }, 'picked-up: self-heal updateStatus DISPATCHED failed');
+
+    // ─── Canonical DISPATCHED point ─────────────────────────────
+    // Physical handover has happened — the rider has the food. This
+    // is where order.status moves to DISPATCHED and the customer is
+    // told "on the way". Status-aware advance: in the common case the
+    // kitchen has already marked PACKED, so it's a single hop. If the
+    // kitchen forgot to click "Packed" (or "Start prep") before the
+    // rider grabbed the bag, we auto-advance through the missing
+    // states rather than rejecting — physical pickup is ground truth
+    // that the food existed and was ready.
+    //
+    // The state engine has no multi-step primitive; each updateStatus
+    // is a separate atomic CAS + audit-log row + bus/socket emit. The
+    // audit trail correctly records each intermediate state, which is
+    // a feature for ops investigating "why didn't kitchen click PACKED".
+    //
+    // dispatchedOk gates the customer message — if any step throws
+    // (concurrent CANCELLED, state-engine reject, Mongo blip), abort
+    // the chain and skip the message so the customer is never told
+    // "on the way" on an order that didn't actually reach DISPATCHED.
+    let dispatchedOk = false;
+    try {
+      switch (order.status) {
+        case 'PACKED':
+          // Happy path — kitchen marked PACKED, rider picked up.
+          await orderSvc.updateStatus(order._id, 'DISPATCHED');
+          dispatchedOk = true;
+          break;
+        case 'PREPARING':
+          // Kitchen skipped clicking PACKED. Auto-advance through.
+          log.warn(
+            { orderId: order._id, orderStatus: order.status },
+            'picked-up: kitchen missed PACKED — auto-advancing PREPARING→PACKED→DISPATCHED',
+          );
+          await orderSvc.updateStatus(order._id, 'PACKED');
+          await orderSvc.updateStatus(order._id, 'DISPATCHED');
+          dispatchedOk = true;
+          break;
+        case 'CONFIRMED':
+          // Defensive — server-side acceptance auto-advance to PREPARING
+          // somehow failed and the kitchen never advanced either, yet
+          // a rider picked up. Walk the chain.
+          log.warn(
+            { orderId: order._id, orderStatus: order.status },
+            'picked-up: order still in CONFIRMED — auto-advancing CONFIRMED→PREPARING→PACKED→DISPATCHED',
+          );
+          await orderSvc.updateStatus(order._id, 'PREPARING');
+          await orderSvc.updateStatus(order._id, 'PACKED');
+          await orderSvc.updateStatus(order._id, 'DISPATCHED');
+          dispatchedOk = true;
+          break;
+        case 'DISPATCHED':
+          // Duplicate webhook — idempotent, no transition needed.
+          dispatchedOk = true;
+          break;
+        default:
+          // PAID (restaurant never accepted but rider picked up?!),
+          // terminal states (already cancelled), or anything else.
+          // Ops investigates; don't paper over with a transition.
+          log.warn(
+            { orderId: order._id, orderStatus: order.status },
+            'picked-up: unexpected from-state — skipping DISPATCHED transition and customer notification',
+          );
       }
+    } catch (e) {
+      log.warn(
+        { err: e?.message, orderId: order._id, orderStatus: order.status },
+        'picked-up: auto-advance chain aborted (transition threw) — skipping customer notification',
+      );
     }
 
     // Stamp the rider-pickup moment for SLA analytics. First-write-wins
@@ -372,7 +406,10 @@ async function applyProroutingState(order, statusRaw, eventBody = {}) {
       await col('orders').updateOne({ _id: order._id }, { $set: logisticsSet });
     }
 
-    if (ctx) {
+    // Customer "on the way" message — gated on the DISPATCHED
+    // transition actually committing. Never tell the customer the
+    // rider is on the way for an order whose status didn't move.
+    if (dispatchedOk && ctx) {
       await wa.sendText(ctx.pid, ctx.token, ctx.to,
         `📦 Your order #${order.order_number} has been picked up and is on its way to you!`
       ).catch((e) => log.warn({ err: e?.message }, 'order-picked-up sendText failed'));

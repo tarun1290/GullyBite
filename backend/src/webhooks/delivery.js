@@ -174,12 +174,65 @@ router.post('/', express.json({ limit: '256kb' }), async (req, res) => {
 
     if (newStatus === 'picked_up') {
       logActivity({ actorType: 'webhook', action: 'delivery.picked_up', category: 'delivery', description: `Order picked up by rider`, resourceType: 'delivery', resourceId: String(delivery._id), severity: 'info' });
-      await orderSvc.updateStatus(delivery.order_id, 'DISPATCHED');
+      // Status-aware advance to DISPATCHED — mirrors
+      // services/proroutingState.js picked-up branch. Physical handover
+      // means the food existed and was packed; if the kitchen forgot
+      // to click "Packed" (or "Start prep") before the rider grabbed
+      // the bag, we walk through the missing states rather than letting
+      // the state-engine reject (PREPARING/CONFIRMED → DISPATCHED is
+      // not a valid edge — only PACKED → DISPATCHED is). Each
+      // updateStatus is its own atomic CAS + audit-log row.
+      // dispatchedOk gates the customer message below — never tell the
+      // customer the rider is on the way for an order whose status
+      // didn't actually move.
+      let dispatchedOk = false;
+      try {
+        switch (order.status) {
+          case 'PACKED':
+            await orderSvc.updateStatus(delivery.order_id, 'DISPATCHED');
+            dispatchedOk = true;
+            break;
+          case 'PREPARING':
+            log.warn(
+              { orderId: delivery.order_id, orderStatus: order.status },
+              'delivery picked_up: kitchen missed PACKED — auto-advancing PREPARING→PACKED→DISPATCHED',
+            );
+            await orderSvc.updateStatus(delivery.order_id, 'PACKED');
+            await orderSvc.updateStatus(delivery.order_id, 'DISPATCHED');
+            dispatchedOk = true;
+            break;
+          case 'CONFIRMED':
+            log.warn(
+              { orderId: delivery.order_id, orderStatus: order.status },
+              'delivery picked_up: order still in CONFIRMED — auto-advancing CONFIRMED→PREPARING→PACKED→DISPATCHED',
+            );
+            await orderSvc.updateStatus(delivery.order_id, 'PREPARING');
+            await orderSvc.updateStatus(delivery.order_id, 'PACKED');
+            await orderSvc.updateStatus(delivery.order_id, 'DISPATCHED');
+            dispatchedOk = true;
+            break;
+          case 'DISPATCHED':
+            dispatchedOk = true; // duplicate webhook — idempotent
+            break;
+          default:
+            log.warn(
+              { orderId: delivery.order_id, orderStatus: order.status },
+              'delivery picked_up: unexpected from-state — skipping DISPATCHED transition and customer notification',
+            );
+        }
+      } catch (e) {
+        log.warn(
+          { err: e?.message, orderId: delivery.order_id, orderStatus: order.status },
+          'delivery picked_up: auto-advance chain aborted (transition threw) — skipping customer notification',
+        );
+      }
       // Customer notification — canonical lifecycle copy from
       // STATUS_MESSAGES.DISPATCHED in services/whatsapp.js. The map
       // already guards trackingUrl via `${trackingUrl ? \`Track: ${trackingUrl}\` : ''}`,
       // so passing null when no URL is present renders cleanly.
-      if (wa_acc && customer) {
+      // Gated on dispatchedOk so a failed transition never sends a
+      // misleading "on the way" message.
+      if (dispatchedOk && wa_acc && customer) {
         if (!(await isWithinCSW(order.customer_id, db))) {
           log.info({ event: 'delivery_update_csw_blocked', orderId: delivery.order_id, deliveryStatus: newStatus }, 'DISPATCHED sendStatusUpdate skipped — outside CSW');
         } else {

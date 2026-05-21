@@ -94,9 +94,15 @@ export async function updateOrderStatus(id: string, status: string): Promise<unk
 // updateOrderStatus with 'CONFIRMED' technically works for accept but
 // skips the ack stamp; calling it with 'REJECTED_BY_RESTAURANT' bypasses
 // the refund entirely.
-export async function acceptOrder(id: string): Promise<{ success: boolean; status?: string; alreadyAcknowledged?: boolean }> {
+// `confirmed` is true only when the PAID→CONFIRMED state transition
+// actually committed; `alreadyAcknowledged` covers the idempotent path
+// where another transport (Petpooja, another dashboard tab) already
+// accepted. The transition-failed case lands as an HTTP 409 (axios
+// throws) — callers must rely on the try/catch, not on a `confirmed:false`
+// success body.
+export async function acceptOrder(id: string): Promise<{ success: boolean; status?: string; alreadyAcknowledged?: boolean; confirmed?: boolean }> {
   const { data } = await client.post(`/api/restaurant/orders/${id}/accept`);
-  return data as { success: boolean; status?: string; alreadyAcknowledged?: boolean };
+  return data as { success: boolean; status?: string; alreadyAcknowledged?: boolean; confirmed?: boolean };
 }
 
 export async function declineOrder(id: string, reason?: string): Promise<{ success: boolean; status?: string; refundId?: string | null }> {
