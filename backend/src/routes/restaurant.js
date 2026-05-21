@@ -5931,18 +5931,41 @@ router.get('/orders', async (req, res) => {
       .limit(parseInt(limit))
       .toArray();
 
+    // Batch branch + Petpooja-integration fetch keyed by unique branch_ids
+    // so the per-order enrichment loop below stays O(1) DB calls. The
+    // pos_connected flag is true when an active petpooja row exists in
+    // restaurant_integrations for the branch — there is no
+    // branches.petpooja_outlet_id field; the integration is the canonical
+    // source (see routes/petpoojaIntegration.js _resolveStore).
+    const orderBranchIds = [...new Set(orders.map(o => o.branch_id).filter(Boolean))];
+    const [orderBranches, posIntegrations] = await Promise.all([
+      orderBranchIds.length
+        ? col('branches').find({ _id: { $in: orderBranchIds } }).toArray()
+        : Promise.resolve([]),
+      orderBranchIds.length
+        ? col('restaurant_integrations').find({
+            platform: 'petpooja',
+            branch_id: { $in: orderBranchIds },
+            is_active: true,
+          }).project({ branch_id: 1 }).toArray()
+        : Promise.resolve([]),
+    ]);
+    const branchById = new Map(orderBranches.map(b => [String(b._id), b]));
+    const posConnectedBranchIds = new Set(posIntegrations.map(i => String(i.branch_id)));
+
     // Enrich with customer + branch names + order items
     const enriched = await Promise.all(orders.map(async o => {
-      const [customer, branch, items] = await Promise.all([
+      const [customer, items] = await Promise.all([
         col('customers').findOne({ _id: o.customer_id }),
-        col('branches').findOne({ _id: o.branch_id }),
         col('order_items').find({ order_id: String(o._id) }).toArray(),
       ]);
+      const branch = branchById.get(String(o.branch_id));
       return {
         ...mapId(o),
         customer_name: customer?.name,
         wa_phone:      maskPhone(customer?.wa_phone),
         branch_name:   branch?.name,
+        pos_connected: posConnectedBranchIds.has(String(o.branch_id)),
         items:         mapIds(items),
       };
     }));
@@ -5962,9 +5985,13 @@ router.get('/orders/:orderId', async (req, res) => {
       return res.status(404).json({ error: 'Order not found' });
     }
 
-    const [customer, items] = await Promise.all([
+    const [customer, items, posIntegration] = await Promise.all([
       col('customers').findOne({ _id: o.customer_id }),
       col('order_items').find({ order_id: req.params.orderId }).sort({ _id: 1 }).toArray(),
+      col('restaurant_integrations').findOne(
+        { platform: 'petpooja', branch_id: o.branch_id, is_active: true },
+        { projection: { _id: 1 } },
+      ),
     ]);
 
     res.json({
@@ -5972,6 +5999,7 @@ router.get('/orders/:orderId', async (req, res) => {
       customer_name: customer?.name,
       wa_phone:      maskPhone(customer?.wa_phone),
       branch_name:   branch?.name,
+      pos_connected: !!posIntegration,
       items:         mapIds(items),
     });
   } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }

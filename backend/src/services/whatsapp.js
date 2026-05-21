@@ -385,6 +385,7 @@ const sendStatusUpdate = (pid, token, to, status, { orderNumber, eta, trackingUr
     DISPATCHED: `🚴 *Out for Delivery!*\nOrder #${orderNumber} is on its way!\n${trackingUrl ? `Track: ${trackingUrl}` : ''}`,
     DELIVERED: `✅ Order #${orderNumber} delivered. Enjoy your meal! 🍽️`,
     CANCELLED: `❌ *Order Cancelled*\nOrder #${orderNumber} has been cancelled.\nAny payment will be refunded in 3-5 business days.`,
+    REJECTED_BY_RESTAURANT: `Sorry, your order could not be accepted by the restaurant. Please try ordering again or contact the restaurant directly.`,
   };
   return sendText(pid, token, to, msgs[status] || `Order #${orderNumber}: ${status}`);
 };

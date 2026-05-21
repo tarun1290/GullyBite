@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import OrderCard from '../../../components/restaurant/OrderCard';
 import OrderDetailModal from '../../../components/restaurant/OrderDetailModal';
-import { getOrders, updateOrderStatus, acceptOrder, declineOrder, getStaffedBranches } from '../../../api/restaurant';
+import { getOrders, updateOrderStatus, getStaffedBranches } from '../../../api/restaurant';
 import { useToast } from '../../../components/Toast';
 import { useNewOrderSound } from '../../../hooks/useNewOrderSound';
 import { useSocketContext } from '../../../components/shared/SocketProvider';
@@ -143,46 +143,16 @@ export default function OrdersPage() {
     return () => { stopAll(); };
   }, [stopAll]);
 
+  // Generic forward transitions (PREPARING → PACKED, etc.). PAID is
+  // owned by the OrderCard's inline Accept/Decline buttons, which call
+  // /accept and /decline directly — see handleAccepted / handleDeclined
+  // below for the post-action notification path.
   const handleStatusChange = useCallback(
     async (orderId: string, nextStatus: string) => {
       setRowBusy((b) => ({ ...b, [orderId]: true }));
       try {
-        // PAID → CONFIRMED MUST go through the dedicated /accept route,
-        // not the generic PATCH /status. /accept is the only path that
-        // sets acknowledged_at, enqueues ORDER_DISPATCH (Prorouting),
-        // cancels the BullMQ acceptance-timeout job, and fires the
-        // customer "order confirmed" WhatsApp send. Hitting PATCH
-        // /status with 'CONFIRMED' moved the order forward but skipped
-        // every one of those side-effects — orders accepted from this
-        // row never dispatched to Prorouting. Mirror what
-        // NewOrderPopup.handleConfirm does: acceptOrder, then the
-        // PREPARING auto-advance via PATCH /status.
-        //
-        // Forward status flips (CONFIRMED→PREPARING, PREPARING→PACKED,
-        // etc.) legitimately stay on PATCH /status — they're status
-        // updates with no acceptance side-effects to carry.
-        if (nextStatus === 'CONFIRMED') {
-          await acceptOrder(orderId);
-        } else {
-          await updateOrderStatus(orderId, nextStatus);
-        }
-        // Silence the alarm the moment the server confirms the
-        // transition. No-op when the order wasn't ringing.
+        await updateOrderStatus(orderId, nextStatus);
         markOrderActioned(orderId);
-        // Auto-advance CONFIRMED → PREPARING. The owner dashboard
-        // treats CONFIRMED as transient — the staff app keeps an
-        // explicit prep button. Fire-and-forget: if this second call
-        // fails, the order is already accepted on the server, so we
-        // don't surface an error toast or block the row's success
-        // path. A console.warn flags the gap for ops follow-up.
-        if (nextStatus === 'CONFIRMED') {
-          try {
-            await updateOrderStatus(orderId, 'PREPARING');
-          } catch (err) {
-            // eslint-disable-next-line no-console
-            console.warn('[orders] auto-advance to PREPARING failed:', err);
-          }
-        }
         showToast('Order updated ✓', 'success');
         await fetchOrders(filter, { silent: true });
       } catch (e: unknown) {
@@ -199,27 +169,29 @@ export default function OrdersPage() {
     [fetchOrders, filter, showToast, markOrderActioned],
   );
 
-  const handleDecline = useCallback(async (orderId: string) => {
-    if (!window.confirm('Decline this order? Customer will be refunded automatically.')) return;
-    setRowBusy((b) => ({ ...b, [orderId]: true }));
-    try {
-      const res = await declineOrder(orderId);
-      // Silence the alarm immediately on success — same posture as the
-      // accept path in handleStatusChange above.
-      markOrderActioned(orderId);
-      const refundNote = res?.refundId ? ` (refund ${res.refundId})` : '';
-      showToast(`Order declined${refundNote}`, 'success');
-      await fetchOrders(filter, { silent: true });
-    } catch (e: unknown) {
-      const err = e as { response?: { data?: { error?: string } }; message?: string };
-      showToast(err?.response?.data?.error || err?.message || 'Decline failed', 'error');
-    } finally {
-      setRowBusy((b) => {
-        const n = { ...b };
-        delete n[orderId];
-        return n;
-      });
-    }
+  // Post-success callbacks fired by OrderCard after its direct
+  // /accept and /decline calls resolve. The API call has already
+  // happened in the card; here we drive the side-effects the card
+  // can't own — alarm silencing + a silent refetch so the table
+  // reflects the server-side auto-advance (CONFIRMED → PREPARING) +
+  // toast.
+  //
+  // PAID → CONFIRMED → PREPARING auto-advance now happens server-side
+  // inside applyOrderAcceptance (services/orderAcceptance.js), so the
+  // frontend no longer needs to chase it with a follow-up
+  // updateOrderStatus call — the silent refetch picks up the final
+  // status.
+  const handleAccepted = useCallback(async (orderId: string) => {
+    markOrderActioned(orderId);
+    showToast('Order accepted ✓', 'success');
+    await fetchOrders(filter, { silent: true });
+  }, [fetchOrders, filter, showToast, markOrderActioned]);
+
+  const handleDeclined = useCallback(async (orderId: string, refundId?: string | null) => {
+    markOrderActioned(orderId);
+    const refundNote = refundId ? ` (refund ${refundId})` : '';
+    showToast(`Order declined${refundNote}`, 'success');
+    await fetchOrders(filter, { silent: true });
   }, [fetchOrders, filter, showToast, markOrderActioned]);
 
   const handleViewDetail = useCallback((orderId: string) => {
@@ -358,7 +330,8 @@ export default function OrdersPage() {
                     key={o.id}
                     order={o}
                     onStatusChange={handleStatusChange}
-                    onDecline={handleDecline}
+                    onAccepted={handleAccepted}
+                    onDeclined={handleDeclined}
                     onViewDetail={handleViewDetail}
                     busy={Boolean(rowBusy[o.id])}
                   />

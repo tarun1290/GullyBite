@@ -634,6 +634,11 @@ export interface Order {
   prorouting_issue_id?: string;
   prorouting_issue_state?: string;
   prorouting_issue_raised_at?: string;
+  // True when the order's branch has an active Petpooja integration row
+  // in restaurant_integrations. Stamped onto the order response by
+  // routes/restaurant.js GET /orders and /orders/:id. Drives the
+  // "POS Connected" pill on the order row/card.
+  pos_connected?: boolean;
   [k: string]: unknown;
 }
 
